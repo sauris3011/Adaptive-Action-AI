@@ -20,8 +20,8 @@ Your sole responsibility is to collaboratively design the correct system — not
 
 ### 1. Context & Business Goal
 
-- **Problem Statement:** [genai_workflow_optimization_hackathon_problem_statement.md]
-- **Business Goal:** Hackathon prototype demonstrating rapid, robust, zero-admin agentic AI capabilities. [Fill it as per usecase. e.g. Main focus is showing Business and IT metrics before and after AI driven optimisation]. Suggest few use cases which can demonstrate this business goal clearly. For mock API test data use mockserver locally
+- **Problem Statement:** [problem_statement.md]
+- **Business Goal:** Build an adaptive AI copilot that turns fragmented enterprise knowledge into fast, reliable and actionable outcomes. The solution should understand user intent, retrieve and reconcile relevant information, provide explainable recommendations, and complete selected business workflows with appropriate human oversight. It should reduce task completion time and user effort, improve resolution quality and compliance, and increase safe automation. The copilot must be reusable across industries, support multiple data types and systems, and remain measurable, secure, scalable and adaptable as business processes, policies and knowledge change.
 - **Selected Agentic Framework:** [e.g., CrewAI / PydanticAI / Google ADK / LangGraph]
 - **Available Gateway Models:** [gemini/gemini-2.5-flash, gemini/gemini-2.5-pro, gemini/gemini-3.5-flash, gemini/gemini-3.1-flash-lite]
 
