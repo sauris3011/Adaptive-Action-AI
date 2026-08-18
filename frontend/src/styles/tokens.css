@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (FR-12).
+   Every colour in the app resolves through one of these variables. No component
+   may hardcode a colour - that is what makes the theme toggle a single switch
+   rather than a per-component audit.
+   Values are HSL channels (no hsl() wrapper) so Tailwind opacity modifiers
+   like bg-surface/60 work. */
+
+@layer base {
+  :root {
+    --bg:             0 0% 100%;
+    --surface:        210 20% 98%;
+    --surface-raised: 0 0% 100%;
+    --border:         214 20% 89%;
+    --border-strong:  214 18% 78%;
+
+    --text:           222 25% 12%;
+    --text-muted:     215 16% 44%;
+    --text-subtle:    215 14% 58%;
+
+    --accent:         221 70% 45%;
+    --accent-hover:   221 70% 38%;
+    --accent-fg:      0 0% 100%;
+    --accent-subtle:  221 70% 96%;
+
+    --success:        152 52% 32%;
+    --success-subtle: 152 45% 95%;
+    --warning:        32 82% 40%;
+    --warning-subtle: 38 92% 95%;
+    --danger:         0 63% 45%;
+    --danger-subtle:  0 75% 96%;
+    --info:           199 72% 36%;
+    --info-subtle:    199 75% 95%;
+
+    --overlay:        222 30% 12%;
+  }
+
+  [data-theme='dark'] {
+    --bg:             222 24% 8%;
+    --surface:        222 20% 11%;
+    --surface-raised: 222 18% 14%;
+    --border:         218 16% 22%;
+    --border-strong:  218 14% 32%;
+
+    --text:           210 20% 94%;
+    --text-muted:     215 14% 66%;
+    --text-subtle:    215 12% 52%;
+
+    --accent:         217 80% 62%;
+    --accent-hover:   217 80% 70%;
+    --accent-fg:      222 30% 10%;
+    --accent-subtle:  221 45% 18%;
+
+    --success:        152 48% 55%;
+    --success-subtle: 152 30% 16%;
+    --warning:        38 82% 60%;
+    --warning-subtle: 36 40% 17%;
+    --danger:         0 70% 63%;
+    --danger-subtle:  0 40% 18%;
+    --info:           199 70% 58%;
+    --info-subtle:    199 40% 16%;
+
+    --overlay:        222 40% 2%;
+  }
+
+  html { color-scheme: light; }
+  html[data-theme='dark'] { color-scheme: dark; }
+
+  body {
+    @apply bg-bg text-text antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* Tabular numerals everywhere a live counter renders, so the header monitor
+     does not jitter as token counts change width. */
+  .tnum { font-variant-numeric: tabular-nums; }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border border-border bg-surface-raised;
+  }
+  .label-eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-wider text-text-subtle;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium
+           transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-accent-fg hover:bg-accent-hover;
+  }
+  .btn-ghost {
+    @apply btn border border-border text-text hover:bg-surface;
+  }
+  .field {
+    @apply w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text
+           outline-none focus:border-accent focus:ring-1 focus:ring-accent;
+  }
+}
