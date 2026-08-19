@@ -12,6 +12,12 @@ to reconstruct what happened from the database alone.
 Idempotency is by `run_id` per instrument. A double-approve - a double-clicked
 button, a retried request - must not credit an account twice. The second call
 returns the first result and says so.
+
+Per-run idempotency is not enough on its own. Two runs against the same
+transaction carry two different run ids, so both would post, and nothing about
+the credit instrument would notice. `issue_provisional_credit` therefore also
+refuses a second credit against a transaction that already has one, whoever
+approved it.
 """
 
 from __future__ import annotations
@@ -87,6 +93,26 @@ def _existing(table: str, key: str, run_id: str) -> dict[str, Any] | None:
     return query_one(f"SELECT * FROM {table} WHERE run_id = ?", (run_id,))
 
 
+class DuplicateCredit(RuntimeError):
+    """A second provisional credit against an already-credited transaction.
+
+    Its own type rather than a ValueError, because the two mean different
+    things to the caller: a bad amount is a malformed request, this is a
+    well-formed request the ledger refuses. The router maps them to 400 and 409
+    respectively.
+    """
+
+    def __init__(self, transaction_id: str, prior: dict[str, Any]) -> None:
+        super().__init__(
+            f"transaction '{transaction_id}' already carries provisional credit "
+            f"{prior['credit_id']} for {float(prior['amount']):.2f} "
+            f"{prior['currency']}, posted under run '{prior['run_id']}'. "
+            f"A second credit for the same transaction is refused."
+        )
+        self.transaction_id = transaction_id
+        self.prior = prior
+
+
 def issue_provisional_credit(
     *,
     run_id: str,
@@ -105,6 +131,19 @@ def issue_provisional_credit(
     if prior:
         log.info("provisional_credit_idempotent", run_id=run_id, credit_id=prior["credit_id"])
         return dict(prior, idempotent=True)
+
+    # Same transaction, different run. Per-run idempotency cannot see this, and
+    # it is the shape a double intake actually takes.
+    if transaction_id:
+        credited = query_one(
+            "SELECT * FROM cb_provisional_credits WHERE transaction_id = ? AND status = 'posted'",
+            (transaction_id,),
+        )
+        if credited:
+            log.error("provisional_credit_refused", run_id=run_id,
+                      transaction_id=transaction_id, prior_run_id=credited["run_id"],
+                      prior_credit_id=credited["credit_id"])
+            raise DuplicateCredit(transaction_id, credited)
 
     credit_id = _new_id("PC")
     row = {

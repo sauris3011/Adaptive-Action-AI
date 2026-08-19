@@ -25,6 +25,12 @@ class TelemetrySummary(BaseModel):
     cache_misses: int
     cache_hit_ratio: float
     errors: int
+    # Health rides the telemetry poll rather than a second timer: the header
+    # already asks this endpoint every 1.5s, and two pollers for one strip of
+    # the header is a moving part with no user-visible benefit.
+    graph_backend: str = "unselected"
+    graph_fallback: bool = False
+    gateway_enabled: bool = True
 
 
 class RuntimeSettings(BaseModel):

@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (routes_a2a, routes_copilot, routes_core_banking, routes_grounding,
-                     routes_kpi, routes_settings, routes_telemetry)
+                     routes_kpi, routes_records, routes_settings, routes_telemetry)
 from app import settings_store
 from app.config import get_settings
 from app.db.models import migrate
@@ -77,6 +77,7 @@ app.include_router(routes_telemetry.router)
 app.include_router(routes_settings.router)
 app.include_router(routes_copilot.router)
 app.include_router(routes_grounding.router)
+app.include_router(routes_records.router)
 # Mounted in-process: the action workflow calls this over loopback (FR-26).
 app.include_router(routes_core_banking.router)
 app.include_router(routes_kpi.router)

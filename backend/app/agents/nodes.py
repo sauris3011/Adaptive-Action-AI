@@ -17,12 +17,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents import actions, prompts
 from app.agents.state import CopilotState
-from app.db import cases, trace
+from app.db import cases, records, trace
+from app.graph import extract
 from app.llm.factory import invoke_structured
 from app.llm.guard import CallClass
 from app.logging_setup import get_logger
 from app.rag.retrieve import retrieve
 from app.schemas.dispute import (
+    ActionType,
     Intent,
     Reconciliation,
     Recommendation,
@@ -164,6 +166,69 @@ def recommend_node(state: CopilotState) -> CopilotState:
     return {"recommendation": result}
 
 
+# Actions that assert no dispute exists, so no dispute is recorded for them.
+_NON_INTAKE_ACTIONS = (ActionType.ANSWER_ONLY, ActionType.DECLINE)
+
+
+def open_case_node(state: CopilotState) -> CopilotState:
+    """Record the intake against the system of record, before the gate.
+
+    Placed after `recommend` and before `gate` for three reasons. After
+    `retrieve`, so the dispute being raised does not turn up in its own
+    prior-dispute evidence. Before `gate`, because BDP-2.1 makes intake itself
+    the moment a case opens and the amount goes under investigation - no
+    monetary instrument is touched here, and every core-banking call stays
+    behind the interrupt. Inside the graph rather than in the route handler, so
+    the A2A path records intakes on the same terms the UI does.
+
+    A policy question opens nothing: US-5 answers without a case (FR-1).
+    """
+    triage = state.get("triage")
+    recommendation = state.get("recommendation")
+    transaction_id = state.get("transaction_id")
+    customer_id = state.get("customer_id")
+
+    if triage is None or triage.intent is not Intent.DISPUTE_INTAKE:
+        return {}
+    if recommendation is None or recommendation.action in _NON_INTAKE_ACTIONS:
+        return {}
+    if not transaction_id or not customer_id:
+        # Nothing to key the record on. Recorded rather than dropped: an intake
+        # the copilot could not attach to a transaction is worth seeing.
+        trace.record(state["run_id"], "open_case", "skipped", {
+            "reason": "no transaction_id or customer_id on the run",
+        })
+        return {}
+
+    row = records.open_dispute(
+        run_id=state["run_id"],
+        customer_id=customer_id,
+        transaction_id=transaction_id,
+        reason_code=triage.reason_code.value,
+        amount=recommendation.amount,
+    )
+
+    # The relational write is allowed to fail the run - it is the record of
+    # truth. The projection is not: a graph that briefly lags SQLite is
+    # recoverable by a re-seed, whereas a lost intake is not.
+    try:
+        extract.project_dispute(row)
+        projected = True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("dispute_projection_failed", run_id=state["run_id"],
+                    dispute_id=row["dispute_id"], error=str(exc))
+        projected = False
+
+    trace.record(state["run_id"], "open_case", "reused" if row["reused"] else "opened", {
+        "dispute_id": row["dispute_id"],
+        "transaction_id": transaction_id,
+        "customer_id": customer_id,
+        "reason_code": row["reason_code"],
+        "projected_to_graph": projected,
+    })
+    return {"dispute_id": row["dispute_id"]}
+
+
 # --------------------------------------------------------------------------
 # Stage 4: approval gate, action workflow, outcome recording
 # --------------------------------------------------------------------------
@@ -257,9 +322,27 @@ def record_node(state: CopilotState) -> CopilotState:
         elapsed_ms=state.get("elapsed_ms"),
     )
 
+    # Close the dispute the intake opened, so the record does not leave a
+    # decided case sitting at "open" for the next run to retrieve.
+    dispute_id = state.get("dispute_id")
+    dispute_outcome = None
+    if dispute_id:
+        dispute_outcome = records.outcome_for(
+            outcome, recommendation.action.value if recommendation else None)
+        row = records.set_dispute_outcome(dispute_id=dispute_id, outcome=dispute_outcome,
+                                          run_id=state["run_id"])
+        if row:
+            try:
+                extract.project_dispute(row)
+            except Exception as exc:  # noqa: BLE001 - see open_case_node
+                log.warning("dispute_projection_failed", run_id=state["run_id"],
+                            dispute_id=dispute_id, error=str(exc))
+
     trace.record(state["run_id"], "record", "closed", {
         "case_id": case_id, "outcome": outcome,
         "approver": state.get("approver"),
         "actions": len(results),
+        "dispute_id": dispute_id,
+        "dispute_outcome": dispute_outcome,
     })
     return {"case_id": case_id}

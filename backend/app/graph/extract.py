@@ -2,11 +2,14 @@
 
 Two sources, one graph:
 
-* **Entity extraction is deterministic.** Customers, accounts, merchants,
-  transactions and disputes come from the records fixture, not from an LLM.
+* **Entity extraction is deterministic.** Customers, accounts and merchants come
+  from the records fixture and disputes from SQLite, never from an LLM.
   Hallucinating a fraud flag would be worse than not having one, and these
   facts already exist in structured form - inferring them would be a
   self-inflicted accuracy problem.
+* **The graph is a projection, never a second record.** Disputes are read back
+  from `dispute_history` rather than from the fixture, so one raised at runtime
+  survives a re-seed and is visible to retrieval like any seeded one.
 * **Policy extraction is structural.** A Policy node per clause, keyed on the
   clause id the chunker already produced, with tier carried through from
   ingestion. Clause-to-clause edges come from the domain pack, so precedence
@@ -20,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import REPO_ROOT
+from app.db import records as record_store
 from app.graph.base import get_store
 from app.graph.schema import NodeRow, RelRow
 from app.logging_setup import get_logger
@@ -47,7 +51,11 @@ def extract_records(records: dict[str, Any] | None = None) -> dict[str, int]:
         nodes.append(NodeRow("Merchant", merchant["merchant_id"], merchant))
     for txn in records.get("transactions", []):
         nodes.append(NodeRow("Transaction", txn["transaction_id"], txn))
-    for dispute in records.get("disputes", []):
+    # Disputes come from SQLite, not the fixture: a dispute raised at runtime is
+    # as real as a seeded one, and projecting from the fixture would silently
+    # drop it on every re-seed. Callers load the fixture into SQLite first.
+    disputes = record_store.all_disputes()
+    for dispute in disputes:
         nodes.append(NodeRow("Dispute", dispute["dispute_id"], dispute))
     store.upsert_nodes(nodes)
 
@@ -57,12 +65,28 @@ def extract_records(records: dict[str, Any] | None = None) -> dict[str, int]:
     for txn in records.get("transactions", []):
         rels.append(RelRow("MADE", txn["account_id"], txn["transaction_id"]))
         rels.append(RelRow("AT", txn["transaction_id"], txn["merchant_id"]))
-    for dispute in records.get("disputes", []):
+    for dispute in disputes:
         rels.append(RelRow("RAISED", dispute["customer_id"], dispute["dispute_id"]))
     written = store.upsert_rels(rels)
 
-    log.info("records_extracted", nodes=len(nodes), relationships=written)
-    return {"nodes": len(nodes), "relationships": written}
+    log.info("records_extracted", nodes=len(nodes), disputes=len(disputes),
+             relationships=written)
+    return {"nodes": len(nodes), "relationships": written, "disputes": len(disputes)}
+
+
+def project_dispute(row: dict[str, Any]) -> None:
+    """Push one dispute into the graph, in place.
+
+    Both store methods MERGE, so this is the same call whether the dispute is
+    new or is having its outcome updated. `schema.coerce` drops the undeclared
+    `run_id` column, which is why a SQLite row can be handed over unchanged and
+    the graph schema needs no edit.
+    """
+    store = get_store()
+    store.upsert_nodes([NodeRow("Dispute", row["dispute_id"], row)])
+    store.upsert_rels([RelRow("RAISED", row["customer_id"], row["dispute_id"])])
+    log.info("dispute_projected", dispute_id=row["dispute_id"],
+             customer_id=row["customer_id"], outcome=row.get("outcome"))
 
 
 def extract_documents(documents: list[Document], chunks: list[Chunk]) -> dict[str, int]:

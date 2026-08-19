@@ -1,5 +1,6 @@
 import { Send, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { ApprovalPanel } from '../components/Copilot/ApprovalPanel'
 import { ConflictBanner } from '../components/Copilot/ConflictBanner'
 import { EvidencePanel } from '../components/Copilot/EvidencePanel'
@@ -49,13 +50,59 @@ const SCENARIOS = [
   },
 ]
 
+/* The look-up screen hands a transaction over rather than running it itself:
+   whether a request is a question or an instruction to act is what decides
+   between answer_only and the approval gate, and that phrasing is the
+   operator's to write. */
+interface Handoff {
+  text?: string
+  transaction_id?: string
+  customer_id?: string
+}
+
 export function CopilotPage() {
-  const [text, setText] = useState(SCENARIOS[0].text)
-  const [transactionId, setTransactionId] = useState(SCENARIOS[0].transaction_id)
-  const [customerId, setCustomerId] = useState(SCENARIOS[0].customer_id)
+  const handoff = (useLocation().state ?? null) as Handoff | null
+  const { runId } = useParams()
+  const [text, setText] = useState(handoff?.text ?? SCENARIOS[0].text)
+  const [transactionId, setTransactionId] = useState(
+    handoff?.transaction_id ?? SCENARIOS[0].transaction_id,
+  )
+  const [customerId, setCustomerId] = useState(
+    handoff?.customer_id ?? SCENARIOS[0].customer_id,
+  )
   const [run, setRun] = useState<Run | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /* A run id in the URL is a run somebody else started - from the look-up
+     screen, or from this tab before it was reloaded. It is read back from the
+     checkpoint rather than held in memory, which is the property the durable
+     gate was built for and the reason a reload does not lose a pending
+     approval. */
+  useEffect(() => {
+    if (!runId) return
+    let current = true
+    setBusy(true)
+    setError(null)
+    api
+      .getRun(runId)
+      .then((recovered) => {
+        if (!current) return
+        setRun(recovered)
+        setText(recovered.request_text ?? '')
+        setTransactionId(recovered.transaction_id ?? '')
+        setCustomerId(recovered.customer_id ?? '')
+      })
+      .catch((cause) => {
+        if (current) setError(cause instanceof ApiError ? cause.message : String(cause))
+      })
+      .finally(() => {
+        if (current) setBusy(false)
+      })
+    return () => {
+      current = false
+    }
+  }, [runId])
 
   async function submit() {
     if (text.trim().length < 4) return
@@ -80,14 +127,35 @@ export function CopilotPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight text-text">Copilot</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-text">
+          {runId ? 'Reviewing a pending run' : 'Copilot'}
+        </h1>
         <p className="mt-1 text-sm text-text-muted">
-          Submit a dispute in plain language. The copilot grounds itself in policy, entity state and
-          the transaction record, reconciles conflicting sources, and recommends an action for your
-          approval.
+          {runId ? (
+            <>
+              Recovered from its checkpoint, not from this tab&apos;s memory — reload and it is
+              still here.{' '}
+              <Link to="/" className="font-medium text-accent hover:text-accent-hover">
+                Raise a new dispute instead
+              </Link>
+              .
+            </>
+          ) : (
+            <>
+              Submit a dispute in plain language. The copilot grounds itself in policy, entity state
+              and the transaction record, reconciles conflicting sources, and recommends an action
+              for your approval.
+            </>
+          )}
         </p>
       </div>
 
+      {/* Not rendered while reviewing a recovered run. Leaving the intake form
+          here would offer "Submit dispute" as the obvious next click on a
+          screen whose whole point is a dispute that already exists - which is
+          how one transaction acquires two runs. Unmounted rather than hidden,
+          so there are no focusable inputs behind a display:none. */}
+      {!runId && (
       <section className="card space-y-3 p-4">
         <div className="flex flex-wrap gap-2">
           {SCENARIOS.map((scenario) => (
@@ -139,6 +207,7 @@ export function CopilotPage() {
           )}
         </div>
       </section>
+      )}
 
       {error && (
         <div className="card flex gap-2 border-danger/40 bg-danger-subtle p-3">

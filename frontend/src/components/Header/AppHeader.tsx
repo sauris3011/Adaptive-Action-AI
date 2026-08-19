@@ -32,6 +32,9 @@ export function AppHeader({
           <NavLink to="/" className={navClass} end>
             Copilot
           </NavLink>
+          <NavLink to="/transactions" className={navClass}>
+            Transactions
+          </NavLink>
           <NavLink to="/metrics" className={navClass}>
             Metrics
           </NavLink>

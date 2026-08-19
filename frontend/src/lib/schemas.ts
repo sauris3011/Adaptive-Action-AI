@@ -1,5 +1,14 @@
 import { z } from 'zod'
 
+import { GraphStatsSchema } from './schemas.records'
+
+/* The record screens' contracts - and the graph-store shapes they share with
+   the grounding panel - live next door, re-exported here so the single import
+   surface ('../lib/api') is unchanged and both files stay inside the 300-400
+   LOC ceiling (PRD 7.3). The dependency runs one way: this file imports from
+   schemas.records, never the reverse. */
+export * from './schemas.records'
+
 /* Wire-format contracts, split out of api.ts to keep both files inside the
    300-400 LOC ceiling (PRD 7.3). api.ts re-exports everything here, so nothing
    that imports from '../lib/api' had to change.
@@ -20,6 +29,12 @@ export const TelemetrySummarySchema = z.object({
   cache_misses: z.number(),
   cache_hit_ratio: z.number(),
   errors: z.number(),
+  /* Health rides this poll rather than a second timer (FR-13): the header
+     already asks this endpoint every 1.5s, and two pollers for one strip of the
+     header is a moving part with no user-visible benefit. */
+  graph_backend: z.string(),
+  graph_fallback: z.boolean(),
+  gateway_enabled: z.boolean(),
 })
 export type TelemetrySummary = z.infer<typeof TelemetrySummarySchema>
 
@@ -79,15 +94,6 @@ export const VectorStatsSchema = z.object({
   path: z.string(),
 })
 
-export const GraphStatsSchema = z.object({
-  backend: z.string(),
-  nodes: z.number(),
-  relationships: z.number(),
-  by_label: z.record(z.number()),
-  by_relationship: z.record(z.number()),
-  active_backend: z.string().optional(),
-})
-
 export const GroundingStatsSchema = z.object({
   vector: VectorStatsSchema,
   graph: GraphStatsSchema,
@@ -95,25 +101,6 @@ export const GroundingStatsSchema = z.object({
   supported_uploads: z.array(z.string()),
 })
 export type GroundingStats = z.infer<typeof GroundingStatsSchema>
-
-export const GraphViewSchema = z.object({
-  root: z.string().nullable(),
-  found: z.boolean(),
-  hops: z.number().nullable(),
-  nodes: z.array(
-    z.object({
-      id: z.string(),
-      label: z.string(),
-      caption: z.string(),
-      distance: z.number().optional(),
-      props: z.record(z.unknown()),
-    }),
-  ),
-  links: z.array(z.object({ source: z.string(), target: z.string(), label: z.string() })),
-  truncated: z.boolean(),
-})
-export type GraphView = z.infer<typeof GraphViewSchema>
-export type GraphNode = GraphView['nodes'][number]
 
 export const EvidenceSchema = z.object({
   kind: z.enum(['policy', 'graph', 'record']),
@@ -264,6 +251,7 @@ export const RunSchema = z.object({
   case: CaseSchema.nullable().optional(),
 })
 export type Run = z.infer<typeof RunSchema>
+
 
 export const CaseListSchema = z.object({
   cases: z.array(CaseSchema),

@@ -10,13 +10,15 @@ queue would add a moving part with no user-visible benefit.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.db import records
+from app.graph import ask as graph_ask
 from app.graph import extract, traverse
-from app.graph.base import active_backend, get_store
+from app.graph.base import active_backend, get_store, set_backend
 from app.logging_setup import get_logger
 from app.rag import ingest, loaders
 from app.rag import store as vector_store
@@ -53,6 +55,64 @@ def graph_view(
             raise HTTPException(status_code=404, detail=f"no node with key '{entity}'")
         return result
     return traverse.overview(store)
+
+
+@router.post("/ask")
+def ask(payload: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a plain-language question onto the five-query surface and run it.
+
+    POST rather than GET because the question is free text the operator typed,
+    and a URL is the wrong place for it once it grows past a phrase.
+
+    The response always names the call that ran. A wrong answer is only
+    recoverable if the user can see which of the five produced it - that is the
+    difference between retrying by tapping a chip and retrying by rewording and
+    hoping.
+    """
+    question = str(payload.get("question") or "").strip()
+    method = payload.get("method")
+    hops = payload.get("hops", 2)
+    try:
+        hops = max(1, min(3, int(hops)))
+    except (TypeError, ValueError):
+        hops = 2
+    if method is not None and method not in graph_ask.METHODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"method must be one of {', '.join(graph_ask.METHODS)}",
+        )
+
+    started = time.perf_counter()
+    result = graph_ask.ask(question, hops=hops, method=method)
+    result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    log.info("graph_ask", method=result["resolved"]["method"],
+             entity=result["resolved"]["entity"], backend=result["backend"],
+             latency_ms=result["latency_ms"])
+    return result
+
+
+@router.post("/backend")
+def switch_backend(payload: dict[str, Any]) -> dict[str, Any]:
+    """The fallback drill (PRD acceptance criterion 9).
+
+    Flipping the store at runtime is a demo affordance, not an operational one:
+    it exists so the room can watch the same five queries answer identically on
+    the embedded backend. Which is why it reports the switch loudly instead of
+    swapping quietly underneath the UI.
+    """
+    requested = str(payload.get("backend") or "").lower()
+    if requested not in {"neo4j", "kuzu"}:
+        raise HTTPException(status_code=400, detail="backend must be 'neo4j' or 'kuzu'")
+
+    try:
+        active = set_backend(requested)
+    except RuntimeError as exc:
+        # Neo4j unreachable is the expected failure here, and the drill is more
+        # useful if it says so rather than silently staying on Kuzu.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    store = get_store()
+    return {"active_backend": active, "graph": store.counts()}
 
 
 @router.get("/search")
@@ -106,6 +166,11 @@ def reseed(reset: bool = Query(default=True)) -> dict[str, Any]:
 
     The demo's recovery path: a mis-seeded store is one button away from correct
     without dropping to a terminal mid-presentation.
+
+    `reset=false` preserves disputes raised at runtime, because the graph now
+    projects them from SQLite rather than from the fixture. `reset=true` still
+    clears everything - that is what it is for - so the response reports the
+    dispute count either way rather than leaving the operator to guess.
     """
     store = get_store()
     fixture = extract.load_records()
@@ -117,15 +182,17 @@ def reseed(reset: bool = Query(default=True)) -> dict[str, Any]:
     records.load(fixture)
     result = ingest.ingest_corpus(reset=False)
     extract.extract_documents(result.documents, result.chunks)
-    extract.extract_records(fixture)
+    extracted = extract.extract_records(fixture)
     edges = extract.extract_policy_edges(fixture)
     log.info("reseed_complete", documents=len(result.documents),
-             chunks=len(result.chunks), policy_edges=edges)
+             chunks=len(result.chunks), policy_edges=edges,
+             disputes=extracted["disputes"])
 
     return {
         "documents": len(result.documents),
         "chunks": len(result.chunks),
         "policy_edges": edges,
+        "disputes": extracted["disputes"],
         "skipped": result.skipped,
         "vector": vector_store.stats(),
         "graph": store.counts(),

@@ -1,9 +1,9 @@
 """The LangGraph state machine (PRD 5.1).
 
-    triage -> retrieve -> reconcile -> recommend -> [INTERRUPT] -> gate
-                                                                     |
-                                                    approve -> act -> record
-                                                    reject  ---------> record
+    triage -> retrieve -> reconcile -> recommend -> open_case -> [INTERRUPT] -> gate
+                                                                                 |
+                                                                approve -> act -> record
+                                                                reject  ---------> record
 
 Linear, with the parallel fan-out inside `retrieve` and one interrupt before
 `gate`. A multi-agent crew was considered and rejected in the PRD: this workflow
@@ -14,6 +14,11 @@ The interrupt sits BEFORE `gate` rather than inside it, so the pause happens
 with the recommendation complete and no node yet running that could act. There
 is no code path from `recommend` to `act` that does not pass through a human
 decision written into the checkpoint (FR-6).
+
+`open_case` sits inside that pre-gate stretch and writes the intake to the
+system of record. It is not a breach of the gate: it moves no money and calls no
+core-banking endpoint. It is there because a dispute nobody can see is a dispute
+the next run will contradict.
 
 Durability comes from SqliteSaver on the same database file as everything else,
 which is what lets the approval gate survive a page reload - the checkpoint is
@@ -32,6 +37,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agents.nodes import (
     act_node,
     gate_node,
+    open_case_node,
     reconcile_node,
     recommend_node,
     record_node,
@@ -72,6 +78,7 @@ def build() -> Any:
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("reconcile", reconcile_node)
     builder.add_node("recommend", recommend_node)
+    builder.add_node("open_case", open_case_node)
     builder.add_node("gate", gate_node)
     builder.add_node("act", act_node)
     builder.add_node("record", record_node)
@@ -80,7 +87,8 @@ def build() -> Any:
     builder.add_edge("triage", "retrieve")
     builder.add_edge("retrieve", "reconcile")
     builder.add_edge("reconcile", "recommend")
-    builder.add_edge("recommend", "gate")
+    builder.add_edge("recommend", "open_case")
+    builder.add_edge("open_case", "gate")
     builder.add_conditional_edges("gate", route_decision,
                                   {"act": "act", "record": "record"})
     builder.add_edge("act", "record")
@@ -89,7 +97,8 @@ def build() -> Any:
     # The whole approval guarantee rests on this one argument.
     _compiled = builder.compile(checkpointer=_saver, interrupt_before=["gate"])
     log.info("graph_compiled",
-             nodes=["triage", "retrieve", "reconcile", "recommend", "gate", "act", "record"],
+             nodes=["triage", "retrieve", "reconcile", "recommend", "open_case",
+                    "gate", "act", "record"],
              interrupt_before=["gate"])
     return _compiled
 

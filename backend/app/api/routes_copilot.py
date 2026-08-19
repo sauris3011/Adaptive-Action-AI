@@ -78,6 +78,9 @@ def _serialise(state: dict[str, Any]) -> dict[str, Any]:
         "approved_at": state.get("approved_at"),
         "reject_reason": state.get("reject_reason"),
         "case_id": state.get("case_id"),
+        # Present from the interrupt onward, unlike case_id which only exists
+        # once a decision has been recorded.
+        "dispute_id": state.get("dispute_id"),
         "action_results": state.get("action_results") or [],
         # What approving WOULD do, shown before it does it. An approval gate that
         # hides the consequences is a rubber stamp with extra steps.
@@ -213,6 +216,37 @@ def reject(run_id: str, req: RejectionRequest) -> dict[str, Any]:
         "effects": core_banking.effects_for(run_id),
         "case": cases.by_run(run_id),
     }
+
+
+@router.post("/cases/{case_id}/evidence")
+def attach_evidence(case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Attach a graph answer to a case as evidence (US-4).
+
+    Written into the same run_events trace the agent writes to, not a side
+    table: evidence an operator added by hand and evidence the pipeline
+    retrieved have to be equally auditable, and a reviewer should not have to
+    know which of the two they are looking at to find it.
+    """
+    case = cases.by_case(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail=f"no case '{case_id}'")
+
+    trace.record(
+        case["run_id"],
+        node="graph_search",
+        event="evidence_attached",
+        payload={
+            "case_id": case_id,
+            "resolved_call": payload.get("resolved_call"),
+            "method": payload.get("method"),
+            "entity": payload.get("entity"),
+            "answer": payload.get("answer"),
+            "backend": payload.get("backend"),
+        },
+    )
+    log.info("graph_evidence_attached", case_id=case_id, run_id=case["run_id"],
+             method=payload.get("method"))
+    return {"case_id": case_id, "run_id": case["run_id"], "attached": True}
 
 
 @router.get("/cases")

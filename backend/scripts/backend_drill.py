@@ -5,9 +5,10 @@ Two things, in order:
 1. **Fallback selection.** With no Neo4j credentials, selection must land on
    Kuzu and say why. This is the criterion-9 requirement and it runs anywhere.
 2. **Contract test.** The five-query surface is exercised against whichever
-   backend was selected and compared to values derived from the fixture, not to
-   values recorded from a previous run. Both backends must return the same
-   answers or the fallback is not a fallback.
+   backend was selected and compared to values derived from the data itself -
+   the fixture for entities, SQLite for disputes - not to values recorded from a
+   previous run. Both backends must return the same answers or the fallback is
+   not a fallback.
 
 Run it twice to satisfy "passes on both backends":
 
@@ -29,6 +30,7 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import get_settings  # noqa: E402
+from app.db import records as record_store  # noqa: E402
 from app.db.models import migrate  # noqa: E402
 from app.graph import extract  # noqa: E402
 from app.graph.base import (  # noqa: E402
@@ -67,14 +69,19 @@ class Drill:
 
 
 def _expected_counts(fixture: dict[str, Any]) -> dict[str, int]:
-    """Derived from the fixture, so an edit to the data cannot silently make the
-    drill assert stale numbers."""
+    """Derived from the data, so an edit to it cannot silently make the drill
+    assert stale numbers.
+
+    Disputes are counted from SQLite rather than from the fixture: the graph
+    projects them from there, and a dispute raised at runtime is a real node the
+    drill must expect rather than a failure it should report.
+    """
     return {
         "Customer": len(fixture["customers"]),
         "Account": len(fixture["accounts"]),
         "Merchant": len(fixture["merchants"]),
         "Transaction": len(fixture["transactions"]),
-        "Dispute": len(fixture["disputes"]),
+        "Dispute": record_store.counts()["dispute_history"],
     }
 
 
@@ -93,7 +100,7 @@ def run_contract(drill: Drill, fixture: dict[str, Any]) -> None:
 
     # 1. customer_dispute_history
     cust = "CUST-1002"
-    want_disputes = sum(1 for d in fixture["disputes"] if d["customer_id"] == cust)
+    want_disputes = len(record_store.disputes_for_customer(cust))
     history = store.customer_dispute_history(cust)
     drill.check(f"customer_dispute_history({cust}) rows", len(history), want_disputes)
     drill.check_that("dispute history ordered newest first",

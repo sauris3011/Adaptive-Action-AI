@@ -105,6 +105,29 @@ def active_backend() -> str:
     return _active or "unselected"
 
 
+def set_backend(backend: str) -> str:
+    """Switch stores at runtime for the fallback drill (acceptance criterion 9).
+
+    Deliberately narrower than select_backend(): this one is driven by an
+    operator pressing a button, so an unreachable Neo4j is a refusal the UI can
+    show rather than a boot failure. The old store is closed first - two live
+    drivers against the same data is not a state worth supporting.
+    """
+    global _active
+    if backend not in {"neo4j", "kuzu"}:
+        raise ValueError(f"unknown graph backend '{backend}'")
+
+    if backend == "neo4j":
+        ok, detail = probe_neo4j()
+        if not ok:
+            raise RuntimeError(f"Neo4j is unreachable: {detail}")
+
+    close_store()
+    _active = backend
+    log.info("graph_backend_switched", backend=_active)
+    return _active
+
+
 _store: Any | None = None
 
 

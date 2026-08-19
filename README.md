@@ -99,15 +99,17 @@ backend/app/     config, tls, logging_setup, main
   llm/           factory (sole model construction site), embeddings, guard, ledger, pricing
   schemas/       grounding, corpus, api
   rag/           loaders (MIME registry), chunker, store (Chroma), ingest, retrieve
-  graph/         base (protocol + selection), schema, kuzu_store, neo4j_store, traverse, extract
-  db/            engine, models, records (entity state, incl. the fraud flag), cases, trace
+  graph/         base (protocol + selection), schema, kuzu_store, neo4j_store, traverse,
+                 extract (projection from the record), ask (five-query surface resolver)
+  db/            engine, models, records (entity state + disputes, incl. the fraud flag),
+                 lookup (transaction search + derived signals), cases, trace
   agents/        graph (topology + interrupt), nodes, prompts, actions, state
   tools/         core_banking (mock system of engagement)
-  api/           routes_{telemetry,settings,copilot,grounding,core_banking}
+  api/           routes_{telemetry,settings,copilot,grounding,records,core_banking,kpi,a2a}
 backend/domain/  banking/{corpus/*.md, records.json} - the domain pack: data, not code
-backend/scripts/ preflight, seed_data
-frontend/src/    components/{Header,SettingsDrawer,Grounding,Copilot,ui}, routes,
-                 lib/{api,schemas}, styles/tokens.css
+backend/scripts/ preflight, seed_data, run_eval, backend_drill
+frontend/src/    components/{Header,SettingsDrawer,Grounding,Copilot,Transactions,ui}, routes,
+                 lib/{api,schemas,schemas.records}, styles/tokens.css
 ```
 
 300–400 LOC ceiling per file. Every colour resolves through a token in
@@ -133,9 +135,35 @@ PRD §7.2.
 | 3 — LangGraph reasoning pipeline | Done: triage/retrieve/reconcile/recommend, structured output, SqliteSaver checkpoints, run trace, conflict banner and recommendation UI |
 | 4 — Action workflow + approval gate | Done: durable interrupt, mock core-banking router, action mapping, approve/reject with recorded outcomes, audit case view |
 | 5 — Eval, KPIs, A2A | Done: 20-case labelled eval with KPI JSON, KPI strip, A2A conformance slice, graph-backend drill, persisted model routing |
+| 6 — Record screens | Done: transaction look-up over the system of record, plain-language graph Q&A on the five-query surface, dispute write-back into the record and the graph |
 
 The Copilot page runs the full dispute workflow end to end: recommendation, approval gate, action
 execution against the mock core-banking API, and a recorded outcome on both paths.
+
+### Opening a dispute writes to the record
+
+Stage 6's look-up screen made a gap visible that Stage 4 had left: raising a dispute produced a
+checkpoint, a trace and — after approval — a case row, but nothing the system reads back. Prior
+dispute history is retrieved from the graph, and `Dispute` nodes only ever came from `records.json`
+at seed time, so a dispute raised two minutes ago was invisible to the next run.
+
+An `open_case` node now sits between `recommend` and the interrupt. It writes the intake to
+`dispute_history` and projects it into the graph, and `record` closes the same row when a decision
+lands. This is not a breach of the approval gate: it moves no money and calls no core-banking
+endpoint, and BDP-2.1 makes intake itself the moment a case opens. It runs *after* `retrieve`, so
+the dispute being raised does not appear in its own prior-dispute evidence.
+
+Two things follow from having the state at all. The look-up screen carries a `DISPUTED` signal and
+refuses a second intake on a transaction that already has an open case, offering the pending run
+instead — previously the only route back to a parked approval was to raise the dispute again.
+And `issue_provisional_credit` now refuses a second credit against an already-credited transaction:
+per-`run_id` idempotency cannot see two runs on one transaction, which is exactly the shape a
+double intake takes.
+
+SQLite is the record and the graph is a projection of it, so `extract_records` reads disputes from
+`dispute_history` rather than from the fixture. A re-seed without `--reset` therefore keeps disputes
+raised at runtime, and `backend_drill.py` derives its expected `Dispute` count from the same place
+rather than from the fixture's length.
 
 ### The approval gate
 

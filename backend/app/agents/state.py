@@ -44,6 +44,10 @@ class CopilotState(TypedDict, total=False):
     reconciliation: Annotated[Reconciliation | None, _last]
     recommendation: Annotated[Recommendation | None, _last]
 
+    # The intake written against the system of record before the gate. Carried
+    # in state so `record` can close the same row the intake opened.
+    dispute_id: Annotated[str | None, _last]
+
     # Approval gate (Stage 4). Written by the API before the graph resumes;
     # the gate node reads them rather than deciding anything itself.
     decision: Annotated[str | None, _last]      # "approved" | "rejected"

@@ -56,6 +56,10 @@ class NoticeRequest(BaseModel):
 def provisional_credit(req: ProvisionalCreditRequest) -> dict[str, Any]:
     try:
         result = core_banking.issue_provisional_credit(**req.model_dump())
+    except core_banking.DuplicateCredit as exc:
+        # 409, not 400: the request is well formed and the ledger is refusing
+        # it. Same distinction the approval gate draws on a resumed run.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"mock": True, "instrument": "provisional_credit", **result}

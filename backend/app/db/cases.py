@@ -62,6 +62,10 @@ def by_run(run_id: str) -> dict[str, Any] | None:
     return query_one("SELECT * FROM dispute_cases WHERE run_id = ?", (run_id,))
 
 
+def by_case(case_id: str) -> dict[str, Any] | None:
+    return query_one("SELECT * FROM dispute_cases WHERE case_id = ?", (case_id,))
+
+
 def recent(limit: int = 50) -> list[dict[str, Any]]:
     return query_all(
         "SELECT * FROM dispute_cases ORDER BY created_at DESC LIMIT ?", (limit,)

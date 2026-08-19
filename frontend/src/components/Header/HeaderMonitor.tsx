@@ -26,6 +26,27 @@ function Stat({
   )
 }
 
+/* Health sits left of the counters and is the loudest item in the strip.
+   Gateway and graph state are what fail during a live demo; cost never needs to
+   be read urgently, which is why it stays the quietest. */
+function Health({ data }: { data: TelemetrySummary }) {
+  const degraded = data.graph_fallback
+  const tone = degraded ? 'text-warning' : 'text-success'
+  const dot = degraded ? 'bg-warning' : 'bg-success'
+  const label = degraded
+    ? `graph: ${data.graph_backend === 'kuzu' ? 'Kùzu' : data.graph_backend} fallback`
+    : data.gateway_enabled
+      ? 'gateway ok'
+      : 'gateway off'
+
+  return (
+    <div className="flex items-center gap-[7px]" title={`Graph backend: ${data.graph_backend}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
+      <span className={`font-mono text-xs font-medium ${tone}`}>{label}</span>
+    </div>
+  )
+}
+
 export function HeaderMonitor({
   data,
   offline,
@@ -50,6 +71,7 @@ export function HeaderMonitor({
 
   return (
     <div className="flex items-center gap-4 sm:gap-5">
+      <Health data={data} />
       <Stat
         icon={
           <Activity size={15} className={busy ? 'animate-pulse' : undefined} />

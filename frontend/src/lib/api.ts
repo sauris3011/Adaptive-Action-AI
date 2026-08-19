@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import {
+  AttachEvidenceSchema,
+  BackendSwitchSchema,
   CaseListSchema,
+  GraphAnswerSchema,
   GraphViewSchema,
   GroundingStatsSchema,
   KpiResponseSchema,
@@ -12,7 +15,11 @@ import {
   SearchResultSchema,
   SmokeResponseSchema,
   TelemetrySummarySchema,
+  TransactionRowSchema,
+  TransactionSearchSchema,
   UploadResultSchema,
+  type GraphMethod,
+  type Scope,
 } from './schemas'
 
 /* The HTTP client. Wire-format schemas live in schemas.ts and are re-exported
@@ -102,6 +109,17 @@ export const api = {
       body: JSON.stringify(body),
     }),
   cases: () => request('/api/copilot/cases', CaseListSchema),
+  /* Graph evidence lands in the same run_events trace the pipeline writes to,
+     so a reviewer does not have to know who added a piece of evidence to find
+     it. */
+  attachEvidence: (
+    caseId: string,
+    body: { resolved_call: string; method: string; entity: string | null; answer: string; backend: string },
+  ) =>
+    request(`/api/copilot/cases/${encodeURIComponent(caseId)}/evidence`, AttachEvidenceSchema, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   kpis: () => request('/api/kpi', KpiResponseSchema),
   groundingStats: () => request('/api/grounding/stats', GroundingStatsSchema),
   graphView: (entity?: string, hops = 2) =>
@@ -111,6 +129,32 @@ export const api = {
         : '/api/grounding/graph',
       GraphViewSchema,
     ),
+  /* Filtering is server-side: the duplicate rule lives next to the table it
+     reads, and the query shape stays the same when the record outgrows a
+     fixture. */
+  lookupTransactions: (q: string, scope: Scope) =>
+    request(
+      `/api/records/transactions?q=${encodeURIComponent(q)}&scope=${scope}`,
+      TransactionSearchSchema,
+    ),
+  lookupTransaction: (transactionId: string) =>
+    request(
+      `/api/records/transactions/${encodeURIComponent(transactionId)}`,
+      TransactionRowSchema,
+    ),
+  /* POST because the question is free text the operator typed, which is the
+     wrong thing to put in a URL once it grows past a phrase. `method` is the
+     chip tap - it overrides resolution rather than re-asking. */
+  askGraph: (body: { question: string; method?: GraphMethod; hops?: number }) =>
+    request('/api/grounding/ask', GraphAnswerSchema, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  switchGraphBackend: (backend: 'neo4j' | 'kuzu') =>
+    request('/api/grounding/backend', BackendSwitchSchema, {
+      method: 'POST',
+      body: JSON.stringify({ backend }),
+    }),
   groundingSearch: (q: string, transactionId?: string) =>
     request(
       `/api/grounding/search?q=${encodeURIComponent(q)}` +

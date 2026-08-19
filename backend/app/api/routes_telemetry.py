@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.config import get_settings
+from app.graph.base import active_backend
 from app.llm import ledger
 from app.schemas.api import TelemetrySummary
 
@@ -12,7 +14,20 @@ router = APIRouter(prefix="/api/telemetry", tags=["telemetry"])
 
 @router.get("/summary", response_model=TelemetrySummary)
 def summary() -> TelemetrySummary:
-    return TelemetrySummary(**ledger.summary())
+    """Ledger totals plus the two health facts the header shows.
+
+    `graph_fallback` is stated rather than inferred from the backend name: which
+    store is a fallback is a deployment question, and the UI should not have to
+    know that "kuzu" means degraded.
+    """
+    backend = active_backend()
+    settings = get_settings()
+    return TelemetrySummary(
+        **ledger.summary(),
+        graph_backend=backend,
+        graph_fallback=backend == "kuzu" and settings.graph_backend != "kuzu",
+        gateway_enabled=settings.gateway_enabled,
+    )
 
 
 @router.get("/recent")

@@ -94,13 +94,44 @@ function simulate(view: GraphView): Positioned[] {
   return nodes
 }
 
+/* Keep the nearest `limit` nodes to the root and drop the rest.
+
+   A neighbourhood answer is a comprehension aid: past roughly two dozen nodes
+   the picture stops being readable and the honest thing is to say how many were
+   left out rather than to draw a hairball. Distance is the right axis to trim
+   on because it is the one the question asked about. */
+function trim(view: GraphView, limit: number): { view: GraphView; hidden: number } {
+  if (view.nodes.length <= limit) return { view, hidden: 0 }
+
+  const kept = [...view.nodes]
+    .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))
+    .slice(0, limit)
+  const ids = new Set(kept.map((node) => node.id))
+  return {
+    view: {
+      ...view,
+      nodes: kept,
+      links: view.links.filter((link) => ids.has(link.source) && ids.has(link.target)),
+    },
+    hidden: view.nodes.length - kept.length,
+  }
+}
+
 interface Props {
   view: GraphView
   onSelect?: (node: GraphNode) => void
   selectedId?: string | null
+  /* The entity the question was asked about, drawn larger with an accent ring
+     so the centre of the answer is findable at a glance. */
+  rootId?: string | null
+  maxNodes?: number
 }
 
-export function ForceGraph({ view, onSelect, selectedId }: Props) {
+export function ForceGraph({ view: fullView, onSelect, selectedId, rootId, maxNodes }: Props) {
+  const { view, hidden } = useMemo(
+    () => trim(fullView, maxNodes ?? Number.POSITIVE_INFINITY),
+    [fullView, maxNodes],
+  )
   const nodes = useMemo(() => simulate(view), [view])
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const [hovered, setHovered] = useState<string | null>(null)
@@ -188,6 +219,7 @@ export function ForceGraph({ view, onSelect, selectedId }: Props) {
           const token = LABEL_TOKEN[node.label] ?? '--text-muted'
           const dimmed = active !== null && node.id !== active && !neighbours.has(node.id)
           const isSelected = node.id === selectedId
+          const isRoot = rootId != null && node.id === rootId
           return (
             <g
               key={node.id}
@@ -198,16 +230,19 @@ export function ForceGraph({ view, onSelect, selectedId }: Props) {
               onMouseLeave={() => setHovered(null)}
               onClick={() => onSelect?.(node)}
             >
+              {isRoot && (
+                <circle r={13} fill="none" stroke="hsl(var(--accent))" strokeWidth={1.5} />
+              )}
               <circle
-                r={isSelected ? 9 : 6}
+                r={isRoot ? 9 : isSelected ? 9 : 6}
                 fill={`hsl(var(${token}))`}
                 stroke="hsl(var(--surface-raised))"
                 strokeWidth={isSelected ? 3 : 1.5}
               />
               <text
-                y={-12}
+                y={isRoot ? -19 : -12}
                 textAnchor="middle"
-                className="fill-text text-[10px] font-medium"
+                className={`text-[10px] ${isRoot ? 'fill-text font-semibold' : 'fill-text font-medium'}`}
                 style={{ pointerEvents: 'none' }}
               >
                 {node.caption.length > 22 ? `${node.caption.slice(0, 21)}...` : node.caption}
@@ -227,6 +262,9 @@ export function ForceGraph({ view, onSelect, selectedId }: Props) {
             {label}
           </span>
         ))}
+        {hidden > 0 && (
+          <span className="text-xs text-text-subtle">+{hidden} more not drawn</span>
+        )}
         {view.truncated && (
           <span className="text-xs text-warning">View truncated at the node cap.</span>
         )}
