@@ -1,4 +1,4 @@
-"""The four reasoning nodes (PRD 5.1).
+"""The graph's nodes (PRD 5.1).
 
 Model roles follow PRD 5.2: `triage` on the cheap tier, `reason` on the strongest
 available for reconcile and recommend - the only two steps doing genuine
@@ -15,9 +15,9 @@ import time
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.agents import prompts
+from app.agents import actions, prompts
 from app.agents.state import CopilotState
-from app.db import trace
+from app.db import cases, trace
 from app.llm.factory import invoke_structured
 from app.llm.guard import CallClass
 from app.logging_setup import get_logger
@@ -162,3 +162,104 @@ def recommend_node(state: CopilotState) -> CopilotState:
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
     })
     return {"recommendation": result}
+
+
+# --------------------------------------------------------------------------
+# Stage 4: approval gate, action workflow, outcome recording
+# --------------------------------------------------------------------------
+
+def gate_node(state: CopilotState) -> CopilotState:
+    """The interrupt target (FR-6).
+
+    Deliberately does nothing. The graph is compiled with
+    interrupt_before=["gate"], so execution stops here with the recommendation
+    complete and NOTHING executed. The decision arrives later via update_state,
+    and this node exists only to give the resume a place to land and the routing
+    a place to branch from.
+
+    Keeping it empty matters: the moment this node makes a decision, the human
+    gate becomes advisory.
+    """
+    decision = state.get("decision")
+    trace.record(state["run_id"], "gate", "resumed", {
+        "decision": decision,
+        "approver": state.get("approver"),
+        "approver_role": state.get("approver_role"),
+    })
+    return {}
+
+
+def route_decision(state: CopilotState) -> str:
+    """approve -> act, reject -> record. An absent decision is a bug, not a
+    default: resuming without one would be a silent auto-approval."""
+    decision = state.get("decision")
+    if decision == "approved":
+        return "act"
+    if decision == "rejected":
+        return "record"
+    raise RuntimeError(
+        f"run '{state.get('run_id')}' resumed with no decision. Refusing to route: "
+        f"an unset decision must never fall through to the action path."
+    )
+
+
+def act_node(state: CopilotState) -> CopilotState:
+    """FR-7. Executes only on the approved branch, only after the interrupt."""
+    started = time.perf_counter()
+    recommendation = state.get("recommendation")
+    if recommendation is None:
+        raise RuntimeError("act reached with no recommendation")
+
+    results = actions.execute(recommendation, dict(state))
+    failed = [r for r in results if r["status_code"] != 200]
+
+    trace.record(state["run_id"], "act", "executed", {
+        "steps": len(results),
+        "instruments": [r["instrument"] for r in results],
+        "references": [r["reference"] for r in results],
+        "failed": len(failed),
+        "elapsed_ms": int((time.perf_counter() - started) * 1000),
+    })
+    return {"action_results": results}
+
+
+def record_node(state: CopilotState) -> CopilotState:
+    """FR-8 and FR-9. Runs on BOTH branches.
+
+    A rejection performs no side effect but is still recorded - "no trace" and
+    "no effect" are different things, and only the second one is required.
+    """
+    recommendation = state.get("recommendation")
+    triage = state.get("triage")
+    decision = state.get("decision")
+    results = state.get("action_results") or []
+
+    case_id = f"CASE-{state['run_id'].removeprefix('run-').upper()}"
+    outcome = decision or "unresolved"
+    if decision == "approved" and any(r["status_code"] != 200 for r in results):
+        # An approved run whose actions failed is neither "approved" nor
+        # "rejected" for reporting purposes, and must not be counted as resolved.
+        outcome = "approved_action_failed"
+
+    cases.upsert(
+        case_id=case_id,
+        run_id=state["run_id"],
+        customer_id=state.get("customer_id"),
+        transaction_id=state.get("transaction_id"),
+        reason_code=triage.reason_code.value if triage else None,
+        recommendation=recommendation.action.value if recommendation else "",
+        governing_clause=recommendation.governing_clause if recommendation else "",
+        confidence=recommendation.confidence if recommendation else None,
+        outcome=outcome,
+        approver=state.get("approver"),
+        approved_at=state.get("approved_at"),
+        reject_reason=state.get("reject_reason"),
+        elapsed_ms=state.get("elapsed_ms"),
+    )
+
+    trace.record(state["run_id"], "record", "closed", {
+        "case_id": case_id, "outcome": outcome,
+        "approver": state.get("approver"),
+        "actions": len(results),
+    })
+    return {"case_id": case_id}

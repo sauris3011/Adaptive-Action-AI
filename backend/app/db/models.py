@@ -82,6 +82,7 @@ SCHEMA = [
 
 def migrate() -> None:
     from app.db import records
+    from app.tools import core_banking
 
     with connect() as conn:
         for statement in SCHEMA:
@@ -89,3 +90,6 @@ def migrate() -> None:
     # Entity state lives in its own module (app/db/records.py) to keep this file
     # focused on run/audit tables and inside the LOC ceiling.
     records.migrate()
+    # The mock core-banking store owns its own tables so its effects are as
+    # inspectable as anything else in the trace (FR-9).
+    core_banking.migrate()

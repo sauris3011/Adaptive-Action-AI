@@ -152,3 +152,45 @@ class Recommendation(BaseModel):
                 "governing clause is not a recommendation"
             )
         return cleaned
+
+
+class ApproverRole(str, Enum):
+    """Authority levels from BDP-3.4.
+
+    This is a POLICY check, not authentication. PRD section 8 excludes auth and
+    RBAC; the operator asserts their own role and nothing verifies it. It exists
+    because the corpus mandates an authority limit and the audit trail has to
+    record who claimed to approve - not because anyone is being authenticated.
+    """
+
+    AGENT = "agent"
+    TEAM_LEAD = "team_lead"
+
+
+class ApprovalRequest(BaseModel):
+    approver: str = Field(min_length=2, max_length=120)
+    approver_role: ApproverRole = ApproverRole.AGENT
+    note: str = Field(default="", max_length=600)
+
+
+class RejectionRequest(BaseModel):
+    approver: str = Field(min_length=2, max_length=120)
+    reason: str = Field(
+        min_length=3, max_length=600,
+        description="Why the recommendation was rejected. Recorded even though "
+                    "nothing executes (FR-8).",
+    )
+
+
+class Decision(str, Enum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ActionResult(BaseModel):
+    """One call against the mock core-banking API."""
+
+    instrument: str
+    reference: str
+    status_code: int
+    detail: dict = Field(default_factory=dict)

@@ -1,13 +1,11 @@
-import { Check, Clock, FileText, X } from 'lucide-react'
+import { Clock, FileText } from 'lucide-react'
 import { ACTION_LABELS, TIER_LABELS, type Evidence, type Recommendation } from '../../lib/api'
 
-/* Recommendation, citations, confidence and the (not yet live) approval
-   controls: FR-4, FR-5, FR-17.
+/* Recommendation, citations and confidence: FR-4 and FR-5.
 
-   The approve/reject buttons render disabled in Stage 3 with the reason stated.
-   Showing them inert is better than hiding them: the approval gate is a
-   mandatory part of the workflow (FR-6), and an operator should see where it
-   sits before it does anything. */
+   The approval controls live in ApprovalPanel rather than here, because what
+   approving DOES belongs next to the decision, not tacked onto the end of the
+   reasoning. */
 
 function Confidence({ value }: { value: number }) {
   const tone = value >= 0.8 ? 'bg-success' : value >= 0.5 ? 'bg-warning' : 'bg-danger'
@@ -110,15 +108,7 @@ export function RecommendationCard({ recommendation, evidence, elapsedMs }: Prop
         </div>
       </div>
 
-      <footer className="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-4 py-3">
-        <button className="btn-primary" disabled title="The action workflow lands in Stage 4">
-          <Check size={14} />
-          Approve
-        </button>
-        <button className="btn-ghost" disabled title="The action workflow lands in Stage 4">
-          <X size={14} />
-          Reject
-        </button>
+      <footer className="border-t border-border bg-surface px-4 py-2">
         <p className="text-xs text-text-subtle">
           {recommendation.requires_approval
             ? 'Requires approval. Nothing has executed - the run is paused before any action.'

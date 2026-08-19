@@ -1,5 +1,6 @@
 import { Send, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { ApprovalPanel } from '../components/Copilot/ApprovalPanel'
 import { ConflictBanner } from '../components/Copilot/ConflictBanner'
 import { EvidencePanel } from '../components/Copilot/EvidencePanel'
 import { RecommendationCard } from '../components/Copilot/RecommendationCard'
@@ -12,24 +13,39 @@ import { ApiError, api, type Run } from '../lib/api'
    should see that sources disagreed before they see what was decided - not
    discover it in a footnote afterwards. */
 
+/* Two shapes on purpose. A scenario phrased as a QUESTION returns answer_only
+   with nothing to approve (US-5); one phrased as a REQUEST TO ACT reaches the
+   approval gate (US-1). Both are correct, and the difference is worth showing. */
 const SCENARIOS = [
   {
-    label: 'Unauthorised charge (C3)',
-    text: 'Cardholder A. Sharma says she did not authorise a 420 USD charge from Cobalt Travel on her Signature card. She wants her money back.',
+    label: 'Fraud routing (C3)',
+    text: 'Cardholder A. Sharma says she did not authorise a 420 USD charge from Cobalt Travel on her Signature card. Please open the dispute and put it right.',
     transaction_id: 'TXN-9001',
     customer_id: 'CUST-1001',
   },
   {
     label: 'Credit timing (C1)',
-    text: 'A. Sharma ordered a 189.99 USD item from Northwind Electronics and it never arrived. She has a Signature card. When do we have to give her provisional credit?',
+    text: 'A. Sharma ordered a 189.99 USD item from Northwind Electronics and it never arrived. Please open the dispute and apply provisional credit.',
     transaction_id: 'TXN-9002',
     customer_id: 'CUST-1001',
   },
   {
     label: 'Small refund (C2)',
-    text: 'R. Okafor says a 34.50 USD Aurora Streaming charge was for content he never received. Can I just refund him now, or does he need to contact the merchant first?',
+    text: 'R. Okafor disputes a 34.50 USD Aurora Streaming charge for content never received. Please refund him.',
     transaction_id: 'TXN-9003',
     customer_id: 'CUST-1002',
+  },
+  {
+    label: 'Above agent limit (BDP-3.4)',
+    text: 'M. Lindqvist reports an unauthorised 899 USD charge at Northwind Electronics on a new Signature account. Please open the dispute and issue provisional credit.',
+    transaction_id: 'TXN-9004',
+    customer_id: 'CUST-1003',
+  },
+  {
+    label: 'Policy question (US-5)',
+    text: 'When do we have to give a Signature cardholder provisional credit on a disputed transaction?',
+    transaction_id: 'TXN-9002',
+    customer_id: 'CUST-1001',
   },
 ]
 
@@ -149,6 +165,7 @@ export function CopilotPage() {
               elapsedMs={run.elapsed_ms}
             />
           )}
+          {run.recommendation && <ApprovalPanel run={run} onResolved={setRun} />}
           <EvidencePanel evidence={run.evidence} />
           <p className="px-1 text-[11px] text-text-subtle">
             Run {run.run_id} - {run.status.replace(/_/g, ' ')}

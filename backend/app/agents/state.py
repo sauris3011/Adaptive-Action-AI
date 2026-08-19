@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from typing import Annotated, Any, TypedDict
 
-from app.schemas.dispute import Attachment, Reconciliation, Recommendation, Triage
+from app.schemas.dispute import (
+    Attachment,
+    Reconciliation,
+    Recommendation,
+    Triage,
+)
 from app.schemas.grounding import GroundingContext
 
 
@@ -38,6 +43,19 @@ class CopilotState(TypedDict, total=False):
     grounding: Annotated[GroundingContext | None, _last]
     reconciliation: Annotated[Reconciliation | None, _last]
     recommendation: Annotated[Recommendation | None, _last]
+
+    # Approval gate (Stage 4). Written by the API before the graph resumes;
+    # the gate node reads them rather than deciding anything itself.
+    decision: Annotated[str | None, _last]      # "approved" | "rejected"
+    approver: Annotated[str | None, _last]
+    approver_role: Annotated[str | None, _last]
+    approval_note: Annotated[str | None, _last]
+    reject_reason: Annotated[str | None, _last]
+    approved_at: Annotated[str | None, _last]
+
+    # Action workflow
+    action_results: Annotated[list[dict[str, Any]] | None, _last]
+    case_id: Annotated[str | None, _last]
 
     # Trace
     elapsed_ms: int

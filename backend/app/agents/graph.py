@@ -1,17 +1,23 @@
 """The LangGraph state machine (PRD 5.1).
 
-    triage -> retrieve -> reconcile -> recommend -> [interrupt]
+    triage -> retrieve -> reconcile -> recommend -> [INTERRUPT] -> gate
+                                                                     |
+                                                    approve -> act -> record
+                                                    reject  ---------> record
 
-Linear, with the parallel fan-out inside `retrieve` and the approval interrupt
-after `recommend`. A multi-agent crew was considered and rejected in the PRD:
-this workflow has no genuinely independent concurrent goals, so role-play agents
-would add latency, token cost and failure modes without adding capability.
+Linear, with the parallel fan-out inside `retrieve` and one interrupt before
+`gate`. A multi-agent crew was considered and rejected in the PRD: this workflow
+has no genuinely independent concurrent goals, so role-play agents would add
+latency, token cost and failure modes without adding capability.
+
+The interrupt sits BEFORE `gate` rather than inside it, so the pause happens
+with the recommendation complete and no node yet running that could act. There
+is no code path from `recommend` to `act` that does not pass through a human
+decision written into the checkpoint (FR-6).
 
 Durability comes from SqliteSaver on the same database file as everything else,
 which is what lets the approval gate survive a page reload - the checkpoint is
-on disk, not in memory. Stage 4 resumes from that checkpoint; Stage 3 stops at
-it, which is why `recommend` is the interrupt-before target rather than a node
-that acts.
+on disk, not in memory.
 """
 
 from __future__ import annotations
@@ -23,7 +29,16 @@ from typing import Any
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.nodes import reconcile_node, recommend_node, retrieve_node, triage_node
+from app.agents.nodes import (
+    act_node,
+    gate_node,
+    reconcile_node,
+    recommend_node,
+    record_node,
+    retrieve_node,
+    route_decision,
+    triage_node,
+)
 from app.agents.state import CopilotState
 from app.config import get_settings
 from app.db import trace
@@ -57,15 +72,25 @@ def build() -> Any:
     builder.add_node("retrieve", retrieve_node)
     builder.add_node("reconcile", reconcile_node)
     builder.add_node("recommend", recommend_node)
+    builder.add_node("gate", gate_node)
+    builder.add_node("act", act_node)
+    builder.add_node("record", record_node)
 
     builder.add_edge(START, "triage")
     builder.add_edge("triage", "retrieve")
     builder.add_edge("retrieve", "reconcile")
     builder.add_edge("reconcile", "recommend")
-    builder.add_edge("recommend", END)
+    builder.add_edge("recommend", "gate")
+    builder.add_conditional_edges("gate", route_decision,
+                                  {"act": "act", "record": "record"})
+    builder.add_edge("act", "record")
+    builder.add_edge("record", END)
 
-    _compiled = builder.compile(checkpointer=_saver)
-    log.info("graph_compiled", nodes=["triage", "retrieve", "reconcile", "recommend"])
+    # The whole approval guarantee rests on this one argument.
+    _compiled = builder.compile(checkpointer=_saver, interrupt_before=["gate"])
+    log.info("graph_compiled",
+             nodes=["triage", "retrieve", "reconcile", "recommend", "gate", "act", "record"],
+             interrupt_before=["gate"])
     return _compiled
 
 
@@ -106,6 +131,10 @@ def run(
         raise
 
     elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+    # The invoke returned because it hit the interrupt, not because it finished.
+    # Persist the elapsed time into the checkpoint so a recovered run reports the
+    # same latency the operator originally saw.
+    graph.update_state(config, {"elapsed_ms": elapsed})
     final["elapsed_ms"] = elapsed
     trace.record(run_id, "graph", "awaiting_approval", {"elapsed_ms": elapsed})
     return final
@@ -117,3 +146,66 @@ def get_state(run_id: str) -> dict[str, Any] | None:
     graph = build()
     snapshot = graph.get_state({"configurable": {"thread_id": run_id}})
     return dict(snapshot.values) if snapshot and snapshot.values else None
+
+
+class NotAwaitingApproval(RuntimeError):
+    """Resume attempted on a run that is not paused at the gate."""
+
+
+def is_awaiting_approval(run_id: str) -> bool:
+    """True only when the checkpoint is parked at the interrupt.
+
+    Read from LangGraph's own `next` rather than from a status column we
+    maintain: a duplicated status field would eventually disagree with the
+    checkpoint, and the checkpoint is what actually governs execution.
+    """
+    graph = build()
+    snapshot = graph.get_state({"configurable": {"thread_id": run_id}})
+    return bool(snapshot and snapshot.next and "gate" in snapshot.next)
+
+
+def resume(
+    run_id: str,
+    *,
+    decision: str,
+    approver: str,
+    approver_role: str | None = None,
+    note: str = "",
+    reject_reason: str | None = None,
+) -> dict[str, Any]:
+    """Write the human decision into the checkpoint, then let the graph continue.
+
+    This is the ONLY way execution proceeds past `recommend`. The decision is
+    persisted before the graph runs, so an approval that crashes mid-action is
+    still attributable to whoever gave it.
+    """
+    if decision not in ("approved", "rejected"):
+        raise ValueError(f"decision must be 'approved' or 'rejected', got '{decision}'")
+
+    graph = build()
+    config = {"configurable": {"thread_id": run_id}}
+    snapshot = graph.get_state(config)
+    if not snapshot or not snapshot.values:
+        raise KeyError(run_id)
+    if not (snapshot.next and "gate" in snapshot.next):
+        raise NotAwaitingApproval(
+            f"run '{run_id}' is not awaiting approval (next={snapshot.next or 'done'}). "
+            f"A decision has already been recorded for it."
+        )
+
+    decided_at = datetime.now(timezone.utc).isoformat()
+    graph.update_state(config, {
+        "decision": decision,
+        "approver": approver,
+        "approver_role": approver_role,
+        "approval_note": note,
+        "reject_reason": reject_reason,
+        "approved_at": decided_at,
+    })
+    trace.record(run_id, "gate", decision, {
+        "approver": approver, "approver_role": approver_role,
+        "reason": reject_reason, "note": note, "at": decided_at,
+    })
+
+    # Resuming with None continues from the checkpoint rather than restarting.
+    return graph.invoke(None, config=config)
