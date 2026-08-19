@@ -1,0 +1,14 @@
+{
+  "//": "Declaration-only build for design-sync (claude.ai/design). Emits .d.ts so the converter can extract real prop contracts instead of falling back to an index-signature stub. Output is gitignored; the app build is untouched.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "allowImportingTsExtensions": false,
+    "declarationMap": false,
+    "rootDir": "src",
+    "outDir": ".ds-types"
+  },
+  "include": ["src"]
+}

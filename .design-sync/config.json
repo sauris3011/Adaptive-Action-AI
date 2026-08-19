@@ -1,0 +1,49 @@
+{
+  "projectId": "fcd84fbb-65f3-4385-82ad-7eb11a8e1c5f",
+  "shape": "package",
+  "pkg": "adaptive-action-copilot-ui",
+  "globalName": "AdaptiveCopilotUI",
+  "srcDir": "src/components",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": ".ds-css/ds.css",
+  "buildCmd": "node .design-sync/prepare.mjs",
+  "extraEntries": [
+    "react-router-dom"
+  ],
+  "provider": {
+    "component": "MemoryRouter"
+  },
+  "componentSrcMap": {
+    "NODE": null
+  },
+  "docsDir": "../../../.design-sync/docs",
+  "extraFonts": [
+    "../../../.design-sync/fonts/inter.css"
+  ],
+  "overrides": {
+    "AppHeader": {
+      "cardMode": "column"
+    },
+    "KpiStrip": {
+      "cardMode": "column"
+    },
+    "StatsPanel": {
+      "cardMode": "column"
+    },
+    "RetrievalPreview": {
+      "cardMode": "column"
+    },
+    "ForceGraph": {
+      "cardMode": "column"
+    },
+    "SettingsDrawer": {
+      "cardMode": "single",
+      "primaryStory": "Open",
+      "viewport": "1100x760"
+    },
+    "HeaderMonitor": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}
