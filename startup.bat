@@ -54,6 +54,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM --- Seed ----------------------------------------------------------------
+REM Idempotent and skipped when the stores already hold data, so a normal
+REM restart does not pay the embedding cost.
+"%PY%" backend\scripts\seed_data.py --if-empty
+if errorlevel 1 (
+    echo Startup aborted: seeding failed.
+    exit /b 1
+)
+
 REM --- Launch --------------------------------------------------------------
 REM Separate windows so Ctrl-C in either terminates only that service and
 REM leaves a readable log behind.

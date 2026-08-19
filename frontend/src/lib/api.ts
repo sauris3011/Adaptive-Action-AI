@@ -53,6 +53,104 @@ export const SmokeResponseSchema = z.object({
   model_role: z.string(),
 })
 
+
+/* --- Grounding (FR-15) ------------------------------------------------- */
+
+export const EmbedderSchema = z.object({
+  backend: z.string(),
+  degraded: z.boolean(),
+  dimension: z.number(),
+})
+
+export const VectorStatsSchema = z.object({
+  collection: z.string(),
+  chunks: z.number(),
+  documents: z.number(),
+  by_tier: z.record(z.number()),
+  by_document: z.record(z.number()),
+  embedder: EmbedderSchema,
+  path: z.string(),
+})
+
+export const GraphStatsSchema = z.object({
+  backend: z.string(),
+  nodes: z.number(),
+  relationships: z.number(),
+  by_label: z.record(z.number()),
+  by_relationship: z.record(z.number()),
+  active_backend: z.string().optional(),
+})
+
+export const GroundingStatsSchema = z.object({
+  vector: VectorStatsSchema,
+  graph: GraphStatsSchema,
+  relational: z.record(z.number()),
+  supported_uploads: z.array(z.string()),
+})
+export type GroundingStats = z.infer<typeof GroundingStatsSchema>
+
+export const GraphViewSchema = z.object({
+  root: z.string().nullable(),
+  found: z.boolean(),
+  hops: z.number().nullable(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      caption: z.string(),
+      distance: z.number().optional(),
+      props: z.record(z.unknown()),
+    }),
+  ),
+  links: z.array(z.object({ source: z.string(), target: z.string(), label: z.string() })),
+  truncated: z.boolean(),
+})
+export type GraphView = z.infer<typeof GraphViewSchema>
+export type GraphNode = GraphView['nodes'][number]
+
+export const EvidenceSchema = z.object({
+  kind: z.enum(['policy', 'graph', 'record']),
+  ref: z.string(),
+  title: z.string(),
+  content: z.string(),
+  modality: z.string(),
+  tier: z.number().nullable(),
+  source_uri: z.string().nullable(),
+  score: z.number().nullable(),
+})
+export type Evidence = z.infer<typeof EvidenceSchema>
+
+export const SearchResultSchema = z.object({
+  query: z.string(),
+  count: z.number(),
+  evidence: z.array(EvidenceSchema),
+})
+
+export const UploadResultSchema = z.object({
+  filename: z.string().nullable(),
+  documents: z.array(z.string()),
+  chunks: z.number(),
+  skipped: z.array(z.object({ path: z.string(), reason: z.string(), mime: z.string() })),
+  stats: VectorStatsSchema,
+})
+
+export const ReseedResultSchema = z.object({
+  documents: z.number(),
+  chunks: z.number(),
+  policy_edges: z.number(),
+  skipped: z.array(z.object({ path: z.string(), reason: z.string(), mime: z.string() })),
+  vector: VectorStatsSchema,
+  graph: GraphStatsSchema,
+  relational: z.record(z.number()),
+})
+
+export const TIER_LABELS: Record<number, string> = {
+  1: 'Regulatory requirement',
+  2: 'Card network rules',
+  3: 'Bank policy & SOP',
+  4: 'Product terms & conditions',
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message)
@@ -65,7 +163,13 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
   try {
     resp = await fetch(path, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+      /* FormData must set its own multipart boundary, so the JSON content type
+         is omitted rather than overridden - an explicit header here would break
+         the upload silently. */
+      headers:
+        init?.body instanceof FormData
+          ? { ...(init?.headers ?? {}) }
+          : { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     })
   } catch (cause) {
     throw new ApiError(`Cannot reach the backend at ${path}. Is it running on :8787?`)
@@ -111,6 +215,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ prompt }),
     }),
+  groundingStats: () => request('/api/grounding/stats', GroundingStatsSchema),
+  graphView: (entity?: string, hops = 2) =>
+    request(
+      entity
+        ? `/api/grounding/graph?entity=${encodeURIComponent(entity)}&hops=${hops}`
+        : '/api/grounding/graph',
+      GraphViewSchema,
+    ),
+  groundingSearch: (q: string, transactionId?: string) =>
+    request(
+      `/api/grounding/search?q=${encodeURIComponent(q)}` +
+        (transactionId ? `&transaction_id=${encodeURIComponent(transactionId)}` : ''),
+      SearchResultSchema,
+    ),
+  reseed: () => request('/api/grounding/reseed', ReseedResultSchema, { method: 'POST' }),
+  uploadDocument: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    /* No Content-Type header: the browser must set the multipart boundary. */
+    return request('/api/grounding/upload', UploadResultSchema, {
+      method: 'POST',
+      body,
+      headers: {},
+    })
+  },
 }
 
 export function formatCost(usd: number): string {

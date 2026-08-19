@@ -36,7 +36,21 @@ class GraphStore(Protocol):
 
     def neighborhood(self, entity_id: str, hops: int = 2) -> dict[str, Any]: ...
 
-    def counts(self) -> dict[str, int]: ...
+    # Introspection and writes. Outside the five reasoning queries, but both
+    # backends must still implement them identically or the seed diverges.
+    def upsert_nodes(self, rows: list[Any]) -> int: ...
+
+    def upsert_rels(self, rows: list[Any]) -> int: ...
+
+    def keys(self, label: str) -> list[str]: ...
+
+    def node_by_key(self, key_value: str) -> dict[str, Any] | None: ...
+
+    def edges_of(self, key_value: str) -> list[dict[str, str]]: ...
+
+    def clear(self) -> None: ...
+
+    def counts(self) -> dict[str, Any]: ...
 
     def close(self) -> None: ...
 
@@ -89,3 +103,37 @@ def select_backend() -> str:
 
 def active_backend() -> str:
     return _active or "unselected"
+
+
+_store: Any | None = None
+
+
+def get_store() -> GraphStore:
+    """Singleton over the backend chosen at boot.
+
+    Construction is lazy but selection is not: select_backend() already ran in
+    the lifespan hook, so a dead cloud dependency has surfaced before the first
+    request rather than inside it.
+    """
+    global _store
+    if _store is not None:
+        return _store
+
+    backend = _active or select_backend()
+    if backend == "neo4j":
+        from app.graph.neo4j_store import Neo4jStore
+
+        _store = Neo4jStore()
+    else:
+        from app.graph.kuzu_store import KuzuStore
+
+        _store = KuzuStore()
+    return _store
+
+
+def close_store() -> None:
+    """Graceful shutdown (FR-23)."""
+    global _store
+    if _store is not None:
+        _store.close()
+        _store = None

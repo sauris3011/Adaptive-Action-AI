@@ -81,6 +81,11 @@ SCHEMA = [
 
 
 def migrate() -> None:
+    from app.db import records
+
     with connect() as conn:
         for statement in SCHEMA:
             conn.execute(statement)
+    # Entity state lives in its own module (app/db/records.py) to keep this file
+    # focused on run/audit tables and inside the LOC ceiling.
+    records.migrate()

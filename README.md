@@ -81,12 +81,15 @@ contradictions; the ladder resolves them. That makes conflict resolution testabl
 
 ```
 backend/app/     config, tls, logging_setup, main
-  llm/           factory (sole model construction site), guard, ledger, pricing
-  schemas/       grounding, api
-  graph/         base (GraphStore protocol + backend selection)
-  db/            engine, models
-backend/scripts/ preflight
-frontend/src/    components/{Header,SettingsDrawer,ui}, routes, lib, styles/tokens.css
+  llm/           factory (sole model construction site), embeddings, guard, ledger, pricing
+  schemas/       grounding, corpus, api
+  rag/           loaders (MIME registry), chunker, store (Chroma), ingest, retrieve
+  graph/         base (protocol + selection), schema, kuzu_store, neo4j_store, traverse, extract
+  db/            engine, models, records (entity state, incl. the fraud flag)
+  api/           routes_{telemetry,settings,copilot,grounding}
+backend/domain/  banking/{corpus/*.md, records.json} - the domain pack: data, not code
+backend/scripts/ preflight, seed_data
+frontend/src/    components/{Header,SettingsDrawer,Grounding,ui}, routes, lib, styles/tokens.css
 ```
 
 300–400 LOC ceiling per file. Every colour resolves through a token in
@@ -108,10 +111,37 @@ PRD §7.2.
 |---|---|
 | 0 — PRD | Done |
 | 1 — Walking skeleton | Done: config, TLS, logging, ledger, guard, factory, pre-flight, startup scripts, UI shell with header monitor, theme toggle, settings drawer |
-| 2 — Grounding (corpus, Chroma, GraphStore impls, grounding panel) | Not started |
+| 2 — Grounding | Done: domain pack with C1–C3, MIME-keyed ingest, Chroma, Kùzu + Neo4j stores, relational facts, hybrid fan-out, grounding panel with force graph and upload |
 | 3 — LangGraph reasoning pipeline | Not started |
 | 4 — Action workflow + approval gate | Not started |
 | 5 — Eval, KPIs, A2A, docs | Not started |
 
 The Copilot page currently ships a gateway connectivity probe, not the dispute workflow. That lands
 in Stage 3.
+
+### Seeding
+
+```bash
+.venv/Scripts/python.exe backend/scripts/seed_data.py --reset
+```
+
+Prints document, chunk, node and relationship counts read back from the stores — they must match the
+grounding panel (acceptance criterion 3). `startup.sh` / `startup.bat` run it with `--if-empty`, so a
+normal restart does not pay the embedding cost.
+
+Kùzu is a **single-writer** embedded store: the running backend holds the lock, so the CLI seeder
+cannot run alongside it. Re-seed a live instance with `POST /api/grounding/reseed` (the "Re-seed
+domain pack" button) instead of stopping the server.
+
+### Two gaps against PRD §5.2, found by probing the live gateway
+
+Both are stated rather than worked around silently:
+
+- **No embedding model.** The gateway serves chat models only. Embeddings fall back to Chroma's
+  bundled ONNX MiniLM (local, zero-daemon, zero-admin) — still the same
+  [embeddings.py](backend/app/llm/embeddings.py) construction site, and the gateway path activates
+  the moment an `embed` alias exists. A hashed lexical embedder is the last resort and reports
+  itself as degraded in the panel and the logs.
+- **No pro-tier model.** The catalogue is flash and flash-lite only, so the `reason` role — which
+  PRD §5.2 assigns to pro for `reconcile` and `recommend` — has no pro option to select. This
+  becomes material in Stage 3.
