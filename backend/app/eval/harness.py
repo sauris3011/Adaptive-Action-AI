@@ -9,6 +9,11 @@ Stage 4 already established.
 Cases run in-process against the graph rather than over HTTP. There is no
 server to depend on, which is what lets the eval be part of a pre-flight or a
 CI step later.
+
+The pipeline does write before the gate - `open_case` records the intake - so
+every case is followed by a revert that puts the record back to where the eval
+found it. Without that the suite scores itself against a record its own earlier
+cases changed. See _revert_disputes.
 """
 
 from __future__ import annotations
@@ -19,14 +24,48 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.config import REPO_ROOT
+from app.db import records
 from app.db.engine import connect, query_one
 from app.eval.metrics import summarise
 from app.eval.scoring import CaseScore, score_case
+from app.graph.base import get_store
 from app.logging_setup import get_logger
 
 log = get_logger("eval.harness")
 
 CASES_PATH = REPO_ROOT / "backend" / "domain" / "banking" / "eval_cases.json"
+
+
+def _dispute_baseline() -> set[str]:
+    return {d["dispute_id"] for d in records.all_disputes()}
+
+
+def _revert_disputes(baseline: set[str]) -> int:
+    """Undo the intake the case just recorded, in SQLite and in the graph.
+
+    The pipeline writes a dispute to the record before the gate, which is
+    correct for the product and ruinous for the eval: nine cases carry a
+    transaction id and three transactions appear in two cases each, so without
+    this the second case on a transaction retrieves the dispute the first one
+    raised, and the warm pass re-runs everything against a record that has
+    drifted. An eval whose inputs depend on execution order measures the order.
+
+    Only disputes that were not there when the eval started are removed, so a
+    run against a database carrying real disputes leaves them alone.
+    """
+    extra = [d["dispute_id"] for d in records.all_disputes()
+             if d["dispute_id"] not in baseline]
+    if not extra:
+        return 0
+    records.delete_disputes(extra)
+    try:
+        get_store().delete_nodes("Dispute", extra)
+    except Exception as exc:  # noqa: BLE001
+        # The relational delete is the one that matters for retrieval keying;
+        # a graph left holding an orphan is recoverable with a re-seed, and
+        # saying so beats failing the eval over cleanup.
+        log.warning("dispute_revert_graph_failed", error=str(exc), dispute_ids=extra)
+    return len(extra)
 
 
 def clear_prompt_cache() -> int:
@@ -128,11 +167,15 @@ def run_eval(
 
     cases = cases or load_cases()
     cleared = clear_prompt_cache() if cold_start else 0
+    # Every case starts from the same record. See _revert_disputes.
+    baseline = _dispute_baseline()
+    reverted = 0
     before = _telemetry_snapshot()
     scores: list[CaseScore] = []
 
     for index, case in enumerate(cases, start=1):
         score = _run_case(case, agent_graph.run)
+        reverted += _revert_disputes(baseline)
         scores.append(score)
         log.info("eval_case", case=case["id"], passed=score.passed,
                  action=score.produced_action, latency_ms=score.latency_ms)
@@ -144,6 +187,7 @@ def run_eval(
         warm_before = _telemetry_snapshot()
         for case in cases:
             _run_case(case, agent_graph.run)
+            reverted += _revert_disputes(baseline)
         warm = _telemetry_delta(warm_before, _telemetry_snapshot()) | {
             "note": "second identical pass; measures the cache on repeat queries",
         }
@@ -151,6 +195,9 @@ def run_eval(
     telemetry = _telemetry_delta(before, _telemetry_snapshot())
     telemetry["cold_start"] = cold_start
     telemetry["cache_entries_cleared"] = cleared
+    # Reported rather than silent: a zero here on a suite with dispute-intake
+    # cases means open_case stopped firing, which is itself a defect.
+    telemetry["disputes_reverted"] = reverted
     report = summarise(scores, telemetry, warm)
     report["cold_start"] = cold_start
     return report

@@ -96,6 +96,28 @@ class KuzuStore:
         for node in NODES:
             self._conn.execute(f"MATCH (n:{node.label}) DELETE n")
 
+    def delete_nodes(self, label: str, keys: list[str]) -> int:
+        """Kuzu has no DETACH DELETE, so the edges go first - the same order
+        clear() uses, and the reason a node with edges cannot just be dropped."""
+        if not keys:
+            return 0
+        spec = NODE_BY_LABEL[label]
+        touching = [r for r in RELS if label in (r.src, r.dst)]
+        for key in keys:
+            for rel in touching:
+                side = "a" if rel.src == label else "b"
+                self._conn.execute(
+                    f"MATCH (a:{rel.src})-[e:{rel.label}]->(b:{rel.dst}) "
+                    f"WHERE {side}.{spec.key} = $key DELETE e",
+                    parameters={"key": key},
+                )
+            self._conn.execute(
+                f"MATCH (n:{label}) WHERE n.{spec.key} = $key DELETE n",
+                parameters={"key": key},
+            )
+        log.info("nodes_deleted", label=label, count=len(keys))
+        return len(keys)
+
     # -- the fixed five-query surface --------------------------------------
     def customer_dispute_history(self, customer_id: str) -> list[dict[str, Any]]:
         return self._rows(

@@ -83,6 +83,17 @@ class Neo4jStore:
     def clear(self) -> None:
         self._run("MATCH (n) DETACH DELETE n")
 
+    def delete_nodes(self, label: str, keys: list[str]) -> int:
+        if not keys:
+            return 0
+        spec = NODE_BY_LABEL[label]
+        self._run(
+            f"MATCH (n:{label}) WHERE n.{spec.key} IN $keys DETACH DELETE n",
+            {"keys": list(keys)},
+        )
+        log.info("nodes_deleted", label=label, count=len(keys))
+        return len(keys)
+
     # -- the fixed five-query surface --------------------------------------
     def customer_dispute_history(self, customer_id: str) -> list[dict[str, Any]]:
         return self._run(

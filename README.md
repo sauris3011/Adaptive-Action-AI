@@ -32,14 +32,36 @@ Fill in `GATEWAY_URL` and `GATEWAY_API_KEY`, then:
 ./startup.sh
 ```
 
-On Windows, `startup.bat`. Backend on `:8787`, UI on `:5173`. Both scripts run pre-flight first and
-refuse to start if it fails.
+On Windows, `startup.bat`. Backend on `:8787`, UI on `:5173`. Both scripts reclaim their ports, then
+run pre-flight, and refuse to start if it fails.
 
 Backend only:
 
 ```bash
 ./startup.sh --no-ui
 ```
+
+### Port reclamation
+
+The commonest way this refuses to start is a previous run still holding `:8787`. Both scripts now
+stop whatever is listening on the ports they need before doing anything else
+([free_ports.py](backend/scripts/free_ports.py)), printing each pid and image name as it goes.
+`--no-reclaim` leaves the ports alone and lets pre-flight fail on them instead.
+
+It runs **before** pre-flight rather than inside it. Pre-flight asserts the port is free, and a
+check that repairs what it is checking cannot be trusted to report.
+
+Only a process actually `LISTENING` on one of those exact ports is a candidate — never a match on
+"python" or "node", which would reach across every other checkout on the machine. The port is
+re-tested after the kill, and one that is still held aborts the startup rather than letting the
+launch fail two steps later with a less useful message.
+
+Two details worth knowing, both found by testing rather than by reading:
+
+- **Both address families are checked.** Vite listens on `::1`, and an IPv4-only bind test reports
+  that port free — which is how a port-reclaimer ends up worse than none at all.
+- **No `SO_REUSEADDR` on the probe.** On Windows it permits binding a port another socket already
+  holds, so setting it turns the test into one that always answers "free".
 
 ### Running without a gateway
 
@@ -107,7 +129,7 @@ backend/app/     config, tls, logging_setup, main
   tools/         core_banking (mock system of engagement)
   api/           routes_{telemetry,settings,copilot,grounding,records,core_banking,kpi,a2a}
 backend/domain/  banking/{corpus/*.md, records.json} - the domain pack: data, not code
-backend/scripts/ preflight, seed_data, run_eval, backend_drill
+backend/scripts/ preflight, free_ports, seed_data, run_eval, backend_drill
 frontend/src/    components/{Header,SettingsDrawer,Grounding,Copilot,Transactions,ui}, routes,
                  lib/{api,schemas,schemas.records}, styles/tokens.css
 ```
@@ -164,6 +186,45 @@ SQLite is the record and the graph is a projection of it, so `extract_records` r
 `dispute_history` rather than from the fixture. A re-seed without `--reset` therefore keeps disputes
 raised at runtime, and `backend_drill.py` derives its expected `Dispute` count from the same place
 rather than from the fixture's length.
+
+### The domain pack
+
+| | Customers | Accounts | Merchants | Transactions | Disputes | Graph nodes / edges |
+|---|---|---|---|---|---|---|
+| Stages 0–5 | 4 | 4 | 4 | 6 | 4 | 50 / 29 |
+| Now | 14 | 18 | 16 | 87 | 22 | **185 / 223** |
+
+Deterministically generated, and every entity the eval cases, the drill and the copilot scenarios
+name is carried through unchanged — `CUST-1001`–`1004`, `ACC-5001`–`5004`, `MERCH-201`–`204`,
+`TXN-9001`–`9006`, `DSP-3001`–`3004`, plus `policy_edges` and `retrieval_triggers` verbatim.
+
+Four transactions were added because they were already being cited: the seeded disputes referenced
+`TXN-7781`, `TXN-7802`, `TXN-7845` and `TXN-7900`, none of which existed. They do now, with amounts
+and dates that agree with the disputes naming them.
+
+The larger set also makes three look-up signals reachable that the old fixture could not produce at
+all: a deliberate **duplicate** pair (same merchant, same amount, four days apart), two **reversed**
+transactions, and three disputes left `open` so **disputed** shows on a fresh seed. Previously only
+`FRAUD` ever appeared. Cardholders hold up to two accounts, and merchant volume is weighted so a few
+carry most of the traffic — which is what makes `merchant_risk_profile` worth asking about.
+
+Merchant `dispute_rate` and `risk_band` remain stated figures rather than derived ones. They are now
+*consistent* with the graph rather than *computed* from it; deriving them from 87 transactions would
+put a merchant with one dispute at a 100% rate.
+
+### Why the eval reverts what it writes
+
+`open_case` writes before the gate, which is right for the product and ruinous for a scored suite:
+nine cases carry a transaction id and three transactions appear in two cases each, so the second
+case on a transaction would retrieve the dispute the first one raised, and the warm pass would
+re-run everything against a record that had drifted. An eval whose inputs depend on execution order
+measures the order.
+
+[harness.py](backend/app/eval/harness.py) snapshots the disputes present at the start and reverts
+anything newer after every case, in both passes, reporting the total as `disputes_reverted`. Only
+disputes it did not find at the start are removed, so a run against a database holding real ones
+leaves them alone. Reverting needed `delete_nodes` on the `GraphStore` protocol — the store could
+create and wipe everything but not remove one thing.
 
 ### The approval gate
 

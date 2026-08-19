@@ -16,7 +16,15 @@ from __future__ import annotations
 from collections import deque
 from typing import Any, Protocol
 
-MAX_NODES = 120
+# Sized to hold the whole domain pack (157 entity + 28 policy nodes) rather than
+# to a round number, so `overview` shows the graph instead of an arbitrary
+# prefix of it. The cap still exists, and still bounds a runaway traversal.
+#
+# A 185-node overview is genuinely busy. That is the honest picture of the
+# record, and the readable view is `neighborhood` centred on one entity - which
+# is what the panel's search box is for. Raising this further would trade
+# legibility for a number nobody reads off a hairball.
+MAX_NODES = 220
 
 
 class Traversable(Protocol):

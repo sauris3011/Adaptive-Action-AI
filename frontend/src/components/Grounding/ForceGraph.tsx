@@ -3,10 +3,16 @@ import type { GraphNode, GraphView } from '../../lib/api'
 
 /* Force-directed graph (FR-15), hand-rolled in SVG.
 
-   No graph library: the seed graph is ~50 nodes, the simulation below is a
+   No graph library: the seed graph is ~185 nodes, the simulation below is a
    textbook Fruchterman-Reingold, and a rendering dependency would be the
    largest thing in the bundle for a view this small. It also keeps every colour
    on a design token (FR-12), which a canvas-based library would not.
+
+   The layout is O(n^2) per tick. Measured at 119ms for the whole seed graph,
+   inside a useMemo that runs once per view - so the ceiling that matters here
+   is legibility, not compute. MAX_NODES in traverse.py is where that ceiling
+   is set; the readable view of a graph this size is `neighborhood` centred on
+   one entity, which is what the panel's search box produces.
 
    The simulation runs on a fixed tick budget rather than to convergence, so the
    layout is deterministic across reloads - a graph that settles differently

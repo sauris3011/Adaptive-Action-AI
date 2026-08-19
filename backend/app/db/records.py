@@ -357,6 +357,22 @@ def open_dispute_for_transaction(transaction_id: str) -> dict[str, Any] | None:
     )
 
 
+def delete_disputes(dispute_ids: list[str]) -> int:
+    """Take back specific disputes. Used by the eval harness to revert the
+    intakes its own cases raise, so one case cannot become the next case's
+    prior history."""
+    if not dispute_ids:
+        return 0
+    placeholders = ",".join("?" * len(dispute_ids))
+    with connect() as conn:
+        removed = conn.execute(
+            f"DELETE FROM dispute_history WHERE dispute_id IN ({placeholders})",
+            tuple(dispute_ids),
+        ).rowcount
+    log.info("disputes_deleted", count=removed, dispute_ids=dispute_ids)
+    return removed
+
+
 def dispute_map() -> dict[str, dict[str, Any]]:
     """transaction_id -> the dispute that governs that look-up row.
 
