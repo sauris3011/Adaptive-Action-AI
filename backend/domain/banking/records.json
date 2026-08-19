@@ -1,0 +1,314 @@
+{
+  "_comment": "Synthetic, deterministic fixture (PRD 7.3 Data). No real PII. Committed for reproducibility.",
+  "customers": [
+    {
+      "customer_id": "CUST-1001",
+      "name": "A. Sharma",
+      "product_tier": "SIGNATURE",
+      "segment": "affluent",
+      "since": "2019-03-11",
+      "email": "a.sharma@example.invalid"
+    },
+    {
+      "customer_id": "CUST-1002",
+      "name": "R. Okafor",
+      "product_tier": "STANDARD",
+      "segment": "mass",
+      "since": "2021-07-02",
+      "email": "r.okafor@example.invalid"
+    },
+    {
+      "customer_id": "CUST-1003",
+      "name": "M. Lindqvist",
+      "product_tier": "SIGNATURE",
+      "segment": "affluent",
+      "since": "2026-08-01",
+      "email": "m.lindqvist@example.invalid"
+    },
+    {
+      "customer_id": "CUST-1004",
+      "name": "T. Alvarez",
+      "product_tier": "CLASSIC",
+      "segment": "mass",
+      "since": "2017-11-20",
+      "email": "t.alvarez@example.invalid"
+    }
+  ],
+  "accounts": [
+    {
+      "account_id": "ACC-5001",
+      "customer_id": "CUST-1001",
+      "product": "Signature Premium Card",
+      "opened": "2019-03-11",
+      "status": "active"
+    },
+    {
+      "account_id": "ACC-5002",
+      "customer_id": "CUST-1002",
+      "product": "Standard Card",
+      "opened": "2021-07-02",
+      "status": "active"
+    },
+    {
+      "account_id": "ACC-5003",
+      "customer_id": "CUST-1003",
+      "product": "Signature Premium Card",
+      "opened": "2026-08-01",
+      "status": "active"
+    },
+    {
+      "account_id": "ACC-5004",
+      "customer_id": "CUST-1004",
+      "product": "Classic Card",
+      "opened": "2017-11-20",
+      "status": "active"
+    }
+  ],
+  "merchants": [
+    {
+      "merchant_id": "MERCH-201",
+      "name": "Northwind Electronics",
+      "category": "electronics",
+      "country": "US",
+      "dispute_rate": 0.041,
+      "risk_band": "elevated"
+    },
+    {
+      "merchant_id": "MERCH-202",
+      "name": "Aurora Streaming",
+      "category": "digital_media",
+      "country": "US",
+      "dispute_rate": 0.008,
+      "risk_band": "low"
+    },
+    {
+      "merchant_id": "MERCH-203",
+      "name": "Cobalt Travel",
+      "category": "travel",
+      "country": "GB",
+      "dispute_rate": 0.093,
+      "risk_band": "high"
+    },
+    {
+      "merchant_id": "MERCH-204",
+      "name": "Harbour Grocers",
+      "category": "grocery",
+      "country": "US",
+      "dispute_rate": 0.002,
+      "risk_band": "low"
+    }
+  ],
+  "transactions": [
+    {
+      "transaction_id": "TXN-9001",
+      "account_id": "ACC-5001",
+      "customer_id": "CUST-1001",
+      "merchant_id": "MERCH-203",
+      "amount": 420.0,
+      "currency": "USD",
+      "posted_at": "2026-08-12",
+      "channel": "card_not_present",
+      "fraud_flag": 1,
+      "fraud_score": 0.91,
+      "auth_code": "A41X7",
+      "status": "posted"
+    },
+    {
+      "transaction_id": "TXN-9002",
+      "account_id": "ACC-5001",
+      "customer_id": "CUST-1001",
+      "merchant_id": "MERCH-201",
+      "amount": 189.99,
+      "currency": "USD",
+      "posted_at": "2026-08-05",
+      "channel": "card_not_present",
+      "fraud_flag": 0,
+      "fraud_score": 0.06,
+      "auth_code": "B22K1",
+      "status": "posted"
+    },
+    {
+      "transaction_id": "TXN-9003",
+      "account_id": "ACC-5002",
+      "customer_id": "CUST-1002",
+      "merchant_id": "MERCH-202",
+      "amount": 34.5,
+      "currency": "USD",
+      "posted_at": "2026-08-09",
+      "channel": "recurring",
+      "fraud_flag": 0,
+      "fraud_score": 0.03,
+      "auth_code": "C90P4",
+      "status": "posted"
+    },
+    {
+      "transaction_id": "TXN-9004",
+      "account_id": "ACC-5003",
+      "customer_id": "CUST-1003",
+      "merchant_id": "MERCH-201",
+      "amount": 899.0,
+      "currency": "USD",
+      "posted_at": "2026-08-14",
+      "channel": "card_present",
+      "fraud_flag": 0,
+      "fraud_score": 0.11,
+      "auth_code": "D18Z9",
+      "status": "posted"
+    },
+    {
+      "transaction_id": "TXN-9005",
+      "account_id": "ACC-5004",
+      "customer_id": "CUST-1004",
+      "merchant_id": "MERCH-204",
+      "amount": 62.15,
+      "currency": "USD",
+      "posted_at": "2026-08-15",
+      "channel": "card_present",
+      "fraud_flag": 0,
+      "fraud_score": 0.02,
+      "auth_code": "E77Q2",
+      "status": "posted"
+    },
+    {
+      "transaction_id": "TXN-9006",
+      "account_id": "ACC-5002",
+      "customer_id": "CUST-1002",
+      "merchant_id": "MERCH-203",
+      "amount": 1240.0,
+      "currency": "USD",
+      "posted_at": "2026-07-28",
+      "channel": "card_not_present",
+      "fraud_flag": 1,
+      "fraud_score": 0.86,
+      "auth_code": "F03R8",
+      "status": "posted"
+    }
+  ],
+  "disputes": [
+    {
+      "dispute_id": "DSP-3001",
+      "customer_id": "CUST-1001",
+      "transaction_id": "TXN-7781",
+      "reason_code": "goods_not_received",
+      "amount": 74.0,
+      "opened_at": "2025-11-04",
+      "outcome": "resolved_credit"
+    },
+    {
+      "dispute_id": "DSP-3002",
+      "customer_id": "CUST-1002",
+      "transaction_id": "TXN-7802",
+      "reason_code": "unauthorised",
+      "amount": 210.0,
+      "opened_at": "2026-02-19",
+      "outcome": "resolved_credit"
+    },
+    {
+      "dispute_id": "DSP-3003",
+      "customer_id": "CUST-1002",
+      "transaction_id": "TXN-7845",
+      "reason_code": "duplicate_charge",
+      "amount": 19.99,
+      "opened_at": "2026-05-30",
+      "outcome": "rejected"
+    },
+    {
+      "dispute_id": "DSP-3004",
+      "customer_id": "CUST-1004",
+      "transaction_id": "TXN-7900",
+      "reason_code": "goods_not_received",
+      "amount": 45.0,
+      "opened_at": "2026-06-22",
+      "outcome": "goodwill_refund"
+    }
+  ],
+  "policy_edges": [
+    {
+      "from": "PCT-7.1",
+      "to": "BDP-4.2",
+      "type": "SUPERSEDES",
+      "note": "More favourable product term binds over the standard bank timeline"
+    },
+    {
+      "from": "BDP-4.2",
+      "to": "REG-E-3",
+      "type": "REFERENCES",
+      "note": "Bank timeline sits under the regulatory ceiling"
+    },
+    {
+      "from": "PCT-7.1",
+      "to": "REG-E-3",
+      "type": "REFERENCES",
+      "note": "2 business days is inside the 10 business day ceiling"
+    },
+    {
+      "from": "FSP-1.2",
+      "to": "BDP-2.1",
+      "type": "SUPERSEDES",
+      "note": "Fraud routing overrides standard dispute intake"
+    },
+    {
+      "from": "FSP-1.2",
+      "to": "CNR-12.9",
+      "type": "REFERENCES",
+      "note": "Scheme fraud reporting obligation follows confirmation"
+    },
+    {
+      "from": "GRS-2.3",
+      "to": "CNR-11.4",
+      "type": "DISTINCT_FROM",
+      "note": "Goodwill refund and chargeback are different instruments"
+    },
+    {
+      "from": "GRS-4.1",
+      "to": "CNR-11.4",
+      "type": "REFERENCES",
+      "note": "Goodwill credit reduces recoverable chargeback amount"
+    },
+    {
+      "from": "BDP-3.4",
+      "to": "GRS-2.7",
+      "type": "REFERENCES",
+      "note": "Authority limits align across instruments"
+    },
+    {
+      "from": "BDP-7.1",
+      "to": "REG-E-3",
+      "type": "REFERENCES",
+      "note": "Business-day calculation applies to the regulatory window"
+    }
+  ],
+  "retrieval_triggers": [
+    {
+      "id": "fraud_flag_routing",
+      "field": "fraud_flag",
+      "op": "truthy",
+      "query": "fraud engine flag mandatory routing to fraud operations dispute intake",
+      "why": "C3: the flag exists only in the transaction record, so nothing in the user's words can pull the routing rule into context."
+    },
+    {
+      "id": "signature_tier_timing",
+      "field": "product_tier",
+      "op": "equals",
+      "value": "SIGNATURE",
+      "query": "accelerated provisional credit timing for Signature premium cardholders",
+      "why": "C1: the product tier is a record fact, not something the cardholder states."
+    },
+    {
+      "id": "small_amount_goodwill",
+      "field": "amount",
+      "op": "lt",
+      "value": 50,
+      "query": "goodwill refund auto approval threshold and merchant contact requirement",
+      "why": "C2: whether the goodwill route is even available turns on the posted amount."
+    },
+    {
+      "id": "high_risk_merchant",
+      "field": "risk_band",
+      "op": "equals",
+      "value": "high",
+      "query": "merchant dispute history and chargeback representment evidence requirements",
+      "why": "Merchant risk is a graph/record property the cardholder cannot report."
+    }
+  ]
+}

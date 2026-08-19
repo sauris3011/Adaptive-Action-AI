@@ -81,12 +81,18 @@ contradictions; the ladder resolves them. That makes conflict resolution testabl
 
 ```
 backend/app/     config, tls, logging_setup, main
-  llm/           factory (sole model construction site), guard, ledger, pricing
-  schemas/       grounding, api
-  graph/         base (GraphStore protocol + backend selection)
-  db/            engine, models
-backend/scripts/ preflight
-frontend/src/    components/{Header,SettingsDrawer,ui}, routes, lib, styles/tokens.css
+  llm/           factory (sole model construction site), embeddings, guard, ledger, pricing
+  schemas/       grounding, corpus, api
+  rag/           loaders (MIME registry), chunker, store (Chroma), ingest, retrieve
+  graph/         base (protocol + selection), schema, kuzu_store, neo4j_store, traverse, extract
+  db/            engine, models, records (entity state, incl. the fraud flag), cases, trace
+  agents/        graph (topology + interrupt), nodes, prompts, actions, state
+  tools/         core_banking (mock system of engagement)
+  api/           routes_{telemetry,settings,copilot,grounding,core_banking}
+backend/domain/  banking/{corpus/*.md, records.json} - the domain pack: data, not code
+backend/scripts/ preflight, seed_data
+frontend/src/    components/{Header,SettingsDrawer,Grounding,Copilot,ui}, routes,
+                 lib/{api,schemas}, styles/tokens.css
 ```
 
 300–400 LOC ceiling per file. Every colour resolves through a token in
@@ -108,10 +114,96 @@ PRD §7.2.
 |---|---|
 | 0 — PRD | Done |
 | 1 — Walking skeleton | Done: config, TLS, logging, ledger, guard, factory, pre-flight, startup scripts, UI shell with header monitor, theme toggle, settings drawer |
-| 2 — Grounding (corpus, Chroma, GraphStore impls, grounding panel) | Not started |
-| 3 — LangGraph reasoning pipeline | Not started |
-| 4 — Action workflow + approval gate | Not started |
+| 2 — Grounding | Done: domain pack with C1–C3, MIME-keyed ingest, Chroma, Kùzu + Neo4j stores, relational facts, hybrid fan-out, grounding panel with force graph and upload |
+| 3 — LangGraph reasoning pipeline | Done: triage/retrieve/reconcile/recommend, structured output, SqliteSaver checkpoints, run trace, conflict banner and recommendation UI |
+| 4 — Action workflow + approval gate | Done: durable interrupt, mock core-banking router, action mapping, approve/reject with recorded outcomes, audit case view |
 | 5 — Eval, KPIs, A2A, docs | Not started |
 
-The Copilot page currently ships a gateway connectivity probe, not the dispute workflow. That lands
-in Stage 3.
+The Copilot page runs the full dispute workflow end to end: recommendation, approval gate, action
+execution against the mock core-banking API, and a recorded outcome on both paths.
+
+### The approval gate
+
+The graph is compiled with `interrupt_before=["gate"]`. There is no code path from `recommend` to
+`act` that does not pass through a human decision written into the checkpoint (FR-6). The gate node
+is deliberately empty — the moment it decides anything, the human gate becomes advisory.
+
+Because the checkpoint is on disk, a run survives a full backend restart: kill the process mid-gate,
+restart it, and the pending run is still approvable from its recovered state. Verified, not assumed.
+
+| Path | Result |
+|---|---|
+| Approve | 3 × HTTP 200 from the mock API, case row with approver and timestamp |
+| Reject | zero effects, outcome and reason still recorded (FR-8) |
+| Double-approve | 409, no second credit — idempotent by `run_id` |
+| Over agent limit as agent | 403 citing BDP-3.4; succeeds as Team Lead |
+| Fraud routing approved | fraud-ops case only — no credit, no notice, honouring FSP-1.2 and FSP-5.1 |
+
+The action mapping is deterministic ([actions.py](backend/app/agents/actions.py)). The model chose
+the action; it does not also choose which endpoints get called with what payload. Policy decisions
+that move money belong in code an auditor can read, not in a prompt.
+
+### Bounded schema repair
+
+PRD §5.3 requires one repair retry on a validation failure, then a typed error. Stage 3 shipped
+without it — the factory only retried *transient* errors, so a model response that broke a field
+constraint failed the whole run. A Stage 4 test hit exactly that (a 601-character
+`resolution_basis`), which is how it surfaced.
+
+[factory.py](backend/app/llm/factory.py) now feeds the validator's own message back once and asks
+for the same conclusion reshaped to fit. Verified both ways: it repairs a satisfiable violation, and
+on an unsatisfiable schema it stops after one attempt and raises `SchemaValidationError` — never a
+silent fallback to free text.
+
+### Conflict resolution, measured
+
+All three engineered conflicts resolve correctly against the live gateway (`gemini-3.7-flash` on the
+`reason` role):
+
+| Conflict | Expected | Produced | Governing |
+|---|---|---|---|
+| C1 credit timing | 2 business days | 2 business days | PCT-7.1 over BDP-4.2 and REG-E-3 |
+| C2 merchant contact | not a true conflict | flagged **apparent** only, both routes explained | CNR-11.4 (chargeback) vs GRS-2.3 (goodwill) |
+| C3 fraud routing | route to Fraud Ops | `route_to_fraud_ops` | FSP-1.2 over BDP-2.1, from the record |
+
+Latency 11–16s uncached, well inside the 90s p95 budget.
+
+### Why retrieval is two-phase
+
+C3 exposed a real architectural gap, not a prompt problem. The retrieval query is written by `triage`
+from the cardholder's words — but the fact that decides C3, the fraud-engine flag, exists **only in
+the transaction record**. Nothing the cardholder says can pull FSP-1.2 into context, so the first
+implementation resolved C3 wrongly while reasoning impeccably over evidence that was missing the
+governing clause.
+
+The fix gives the record a vote in what gets retrieved: declarative triggers
+([triggers.py](backend/app/rag/triggers.py)) map record fields to supplementary policy queries. They
+are deterministic — no model decides this — and they live in the domain pack, so a new vertical
+configures its own rather than editing code.
+
+### Seeding
+
+```bash
+.venv/Scripts/python.exe backend/scripts/seed_data.py --reset
+```
+
+Prints document, chunk, node and relationship counts read back from the stores — they must match the
+grounding panel (acceptance criterion 3). `startup.sh` / `startup.bat` run it with `--if-empty`, so a
+normal restart does not pay the embedding cost.
+
+Kùzu is a **single-writer** embedded store: the running backend holds the lock, so the CLI seeder
+cannot run alongside it. Re-seed a live instance with `POST /api/grounding/reseed` (the "Re-seed
+domain pack" button) instead of stopping the server.
+
+### Two gaps against PRD §5.2, found by probing the live gateway
+
+Both are stated rather than worked around silently:
+
+- **No embedding model.** The gateway serves chat models only. Embeddings fall back to Chroma's
+  bundled ONNX MiniLM (local, zero-daemon, zero-admin) — still the same
+  [embeddings.py](backend/app/llm/embeddings.py) construction site, and the gateway path activates
+  the moment an `embed` alias exists. A hashed lexical embedder is the last resort and reports
+  itself as degraded in the panel and the logs.
+- **No pro-tier model.** The catalogue is flash and flash-lite only, so the `reason` role — which
+  PRD §5.2 assigns to pro for `reconcile` and `recommend` — has no pro option to select. This
+  becomes material in Stage 3.

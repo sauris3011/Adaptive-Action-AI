@@ -19,8 +19,8 @@ from typing import Any, TypeVar
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage
-from pydantic import BaseModel
+from langchain_core.messages import BaseMessage, HumanMessage
+from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
 from app.db.engine import connect, query_one
@@ -41,6 +41,26 @@ _TRANSIENT = ("429", "500", "502", "503", "504", "timeout", "timed out",
 def _is_transient(exc: BaseException) -> bool:
     text = f"{type(exc).__name__} {exc}".lower()
     return any(marker in text for marker in _TRANSIENT)
+
+
+class SchemaValidationError(ValueError):
+    """The model answered, but not in the shape the schema requires."""
+
+
+def _repair_message(exc: BaseException, schema: type[BaseModel]) -> HumanMessage:
+    """The one corrective turn PRD 5.3 allows.
+
+    It quotes the validator verbatim rather than paraphrasing: the constraint
+    that failed ("at most 600 characters") is far more actionable than a general
+    instruction to try harder.
+    """
+    return HumanMessage(content=(
+        f"Your previous response did not satisfy the {schema.__name__} schema and was "
+        f"rejected by the validator:\n\n{exc}\n\n"
+        f"Return the same substantive answer, corrected to satisfy every constraint "
+        f"exactly. Do not change your conclusion to make it fit - shorten or reshape "
+        f"the field that was rejected."
+    ))
 
 
 class ModelNotConfigured(RuntimeError):
@@ -155,14 +175,18 @@ def invoke_structured(
     model = get_model(role).with_structured_output(schema, include_raw=True)
     started = time.perf_counter()
     last_exc: BaseException | None = None
+    # Bounded to exactly one, per PRD 5.3. A repair loop that can run twice is a
+    # repair loop that can run forever on a model that cannot satisfy the schema.
+    repair_used = False
+    working = list(messages)
 
     with ledger.InFlight():
         for attempt in range(1, settings.llm_max_attempts + 1):
             try:
-                result = model.invoke(messages)
+                result = model.invoke(working)
                 parsed, raw = result.get("parsed"), result.get("raw")
                 if parsed is None:
-                    raise ValueError(
+                    raise SchemaValidationError(
                         f"structured output failed validation: {result.get('parsing_error')}"
                     )
 
@@ -177,8 +201,17 @@ def invoke_structured(
                     _cache_put(key, alias, parsed.model_dump_json())
                 return parsed
 
-            except Exception as exc:  # noqa: BLE001 - classified by _is_transient
+            except Exception as exc:  # noqa: BLE001 - classified below
                 last_exc = exc
+                is_schema = isinstance(exc, (SchemaValidationError, ValidationError))
+
+                if is_schema and not repair_used and attempt < settings.llm_max_attempts:
+                    repair_used = True
+                    working = [*messages, _repair_message(exc, schema)]
+                    log.warning("llm_schema_repair", node=node, schema=schema.__name__,
+                                error=str(exc)[:400])
+                    continue
+
                 if attempt >= settings.llm_max_attempts or not _is_transient(exc):
                     break
                 backoff = settings.llm_backoff_base_s * (2 ** (attempt - 1))
@@ -189,6 +222,12 @@ def invoke_structured(
     elapsed = int((time.perf_counter() - started) * 1000)
     ledger.record(model=alias, call_class=call_class.value, latency_ms=elapsed,
                   run_id=run_id, node=node, exemption_reason=reason, error=str(last_exc))
+    # A typed error to the UI, never a silent fallback to free text (PRD 5.3).
+    if isinstance(last_exc, (SchemaValidationError, ValidationError)):
+        raise SchemaValidationError(
+            f"node '{node}' could not produce a valid {schema.__name__} after one repair "
+            f"attempt: {last_exc}"
+        ) from last_exc
     raise RuntimeError(f"LLM call failed at node '{node}': {last_exc}") from last_exc
 
 

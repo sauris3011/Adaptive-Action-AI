@@ -52,6 +52,14 @@ if ! "$PY" backend/scripts/preflight.py $PREFLIGHT_ARGS; then
   exit 1
 fi
 
+# --- Seed ------------------------------------------------------------------
+# Idempotent and skipped when the stores already hold data, so a normal restart
+# does not pay the embedding cost.
+if ! "$PY" backend/scripts/seed_data.py --if-empty; then
+  echo "Startup aborted: seeding failed."
+  exit 1
+fi
+
 # --- Launch ----------------------------------------------------------------
 PIDS=()
 shutdown() {

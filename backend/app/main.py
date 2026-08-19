@@ -13,10 +13,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import routes_copilot, routes_settings, routes_telemetry
+from app.api import (routes_copilot, routes_core_banking, routes_grounding,
+                     routes_settings, routes_telemetry)
 from app.config import get_settings
 from app.db.models import migrate
-from app.graph.base import active_backend, select_backend
+from app.graph.base import active_backend, close_store, select_backend
 from app.logging_setup import configure_logging, get_logger
 from app.schemas.api import HealthResponse
 from app.tls import tls_warning
@@ -46,7 +47,9 @@ async def lifespan(app: FastAPI):
              graph_backend=active_backend(), ssl_verify=settings.ssl_verify)
     yield
     # Graceful shutdown (FR-23). Uvicorn already traps SIGINT/SIGTERM and runs
-    # this teardown; connections are per-operation so there is no pool to drain.
+    # this teardown; SQLite connections are per-operation, but the graph driver
+    # is a long-lived singleton and must be closed explicitly.
+    close_store()
     log.info("shutdown_complete")
 
 
@@ -69,6 +72,9 @@ app.add_middleware(
 app.include_router(routes_telemetry.router)
 app.include_router(routes_settings.router)
 app.include_router(routes_copilot.router)
+app.include_router(routes_grounding.router)
+# Mounted in-process: the action workflow calls this over loopback (FR-26).
+app.include_router(routes_core_banking.router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["ops"])
