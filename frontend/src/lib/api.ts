@@ -26,9 +26,19 @@ export const RuntimeSettingsSchema = z.object({
   ssl_verify: z.boolean(),
   tls_warning: z.string().nullable(),
   models: z.record(z.string()),
+  unconfigured_roles: z.array(z.string()),
   graph_backend: z.string(),
 })
 export type RuntimeSettings = z.infer<typeof RuntimeSettingsSchema>
+
+/* Discovered from the gateway on demand - never a hardcoded list in the UI. */
+export const ModelCatalogSchema = z.object({
+  gateway_url: z.string(),
+  models: z.array(z.string()),
+  embedding_models: z.array(z.string()),
+  probed_at: z.string(),
+})
+export type ModelCatalog = z.infer<typeof ModelCatalogSchema>
 
 export const HealthSchema = z.object({
   status: z.string(),
@@ -83,7 +93,15 @@ export const api = {
   health: () => request('/health', HealthSchema),
   telemetry: () => request('/api/telemetry/summary', TelemetrySummarySchema),
   settings: () => request('/api/settings', RuntimeSettingsSchema),
-  updateSettings: (patch: Partial<{ gateway_url: string; gateway_api_key: string; ssl_verify: boolean }>) =>
+  modelCatalog: () => request('/api/settings/models', ModelCatalogSchema),
+  updateSettings: (
+    patch: Partial<{
+      gateway_url: string
+      gateway_api_key: string
+      ssl_verify: boolean
+      models: Record<string, string>
+    }>,
+  ) =>
     request('/api/settings', RuntimeSettingsSchema, {
       method: 'PATCH',
       body: JSON.stringify(patch),

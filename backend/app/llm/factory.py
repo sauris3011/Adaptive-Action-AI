@@ -43,15 +43,35 @@ def _is_transient(exc: BaseException) -> bool:
     return any(marker in text for marker in _TRANSIENT)
 
 
+class ModelNotConfigured(RuntimeError):
+    """No alias picked for a role yet. Distinct from an unknown role so the API
+    can answer 409 (fix it in the settings drawer) rather than 500."""
+
+
+def alias_for(role: str) -> str:
+    """Resolve a role to a gateway model id, or say precisely why it cannot be."""
+    settings = get_settings()
+    models = settings.configured_models
+    if role not in models:
+        raise KeyError(f"unknown model role '{role}'; expected one of {list(models)}")
+    alias = models[role]
+    if not alias:
+        raise ModelNotConfigured(
+            f"no model selected for the '{role}' role - open Settings, probe the "
+            f"gateway and pick one"
+        )
+    return alias
+
+
 @lru_cache(maxsize=8)
 def get_model(role: str) -> BaseChatModel:
-    """Build (once per role) a chat model pointed at the LiteLLM gateway."""
+    """Build (once per role) a chat model pointed at the LiteLLM gateway.
+
+    Cached per role, so every mutation of the alias must clear this cache
+    (routes_settings does).
+    """
     settings = get_settings()
-    alias = settings.configured_models.get(role)
-    if alias is None:
-        raise KeyError(
-            f"unknown model role '{role}'; expected one of {list(settings.configured_models)}"
-        )
+    alias = alias_for(role)
     return init_chat_model(
         model=alias,
         model_provider="openai",
@@ -122,7 +142,7 @@ def invoke_structured(
     """Every LLM response entering application logic passes through here."""
     settings = get_settings()
     reason = enforce(call_class, grounding, node=node, exemption_reason=exemption_reason)
-    alias = settings.configured_models[role]
+    alias = alias_for(role)
     key = _cache_key(alias, messages, schema.__name__)
 
     if use_cache:
@@ -183,9 +203,8 @@ def invoke_text(
     run_id: str | None = None,
 ) -> str:
     """Free-text escape hatch. Not for anything entering application logic."""
-    settings = get_settings()
     reason = enforce(call_class, grounding, node=node, exemption_reason=exemption_reason)
-    alias = settings.configured_models[role]
+    alias = alias_for(role)
     started = time.perf_counter()
 
     with ledger.InFlight():

@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage
 
-from app.llm.factory import invoke_text
+from app.llm.factory import ModelNotConfigured, invoke_text
 from app.llm.guard import CallClass
 from app.schemas.api import SmokeRequest, SmokeResponse
 
@@ -29,6 +29,9 @@ def smoke(req: SmokeRequest) -> SmokeResponse:
             node="smoke",
             exemption_reason="connectivity probe; answers no user question",
         )
+    except ModelNotConfigured as exc:
+        # Not an upstream failure: the operator has not chosen a model yet.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # surfaced verbatim - this endpoint exists to diagnose
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return SmokeResponse(reply=reply, model_role="triage")

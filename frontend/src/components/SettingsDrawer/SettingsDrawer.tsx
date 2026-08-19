@@ -1,8 +1,22 @@
-import { AlertTriangle, Database, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { api, type RuntimeSettings, type TelemetrySummary } from '../../lib/api'
+import { AlertTriangle, Database, RefreshCw, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { api, type ModelCatalog, type RuntimeSettings, type TelemetrySummary } from '../../lib/api'
 import { Field } from '../ui/Field'
+import { Select } from '../ui/Select'
 import { Toggle } from '../ui/Toggle'
+
+/* Role order is presentational only; the backend owns the authoritative set and
+   the drawer renders whatever roles it reports. */
+const ROLE_ORDER = ['triage', 'digest', 'reason', 'embed']
+
+const ROLE_HINTS: Record<string, string> = {
+  triage: 'Cheap, fast. Classification and routing.',
+  digest: 'Mid-tier. Summarisation and extraction.',
+  reason: 'Most capable. Grounded reconciliation and the approval gate.',
+  embed: 'Embeddings for retrieval.',
+}
+
+const NOT_SELECTED = ''
 
 /* Settings drawer (FR-14).
    The master prompt asks for URL, Port and key as separate inputs, so the UI
@@ -36,6 +50,26 @@ export function SettingsDrawer({
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
+  /* Model routing. The catalogue is discovered from the gateway - the UI ships
+     no hardcoded model list and nothing is selected until the user picks. */
+  const [catalog, setCatalog] = useState<ModelCatalog | null>(null)
+  const [probing, setProbing] = useState(false)
+  const [probeError, setProbeError] = useState<string | null>(null)
+  const [draftModels, setDraftModels] = useState<Record<string, string>>({})
+
+  const probe = useCallback(async () => {
+    setProbing(true)
+    setProbeError(null)
+    try {
+      setCatalog(await api.modelCatalog())
+    } catch (e) {
+      setCatalog(null)
+      setProbeError(String((e as Error).message))
+    } finally {
+      setProbing(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!open) return
     setError(null)
@@ -44,12 +78,14 @@ export function SettingsDrawer({
       .settings()
       .then((s) => {
         setSettings(s)
+        setDraftModels(s.models)
         const parts = splitUrl(s.gateway_url)
         setBase(parts.base)
         setPort(parts.port)
       })
       .catch((e) => setError(String(e.message ?? e)))
-  }, [open])
+    void probe()
+  }, [open, probe])
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -61,7 +97,9 @@ export function SettingsDrawer({
     setSaving(true)
     setError(null)
     try {
-      setSettings(await api.updateSettings(patch))
+      const next = await api.updateSettings(patch)
+      setSettings(next)
+      setDraftModels(next.models)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 2000)
     } catch (e) {
@@ -71,11 +109,23 @@ export function SettingsDrawer({
     }
   }
 
-  const saveGateway = () => {
+  const saveGateway = async () => {
     const url = port ? `${base}:${port}` : base
-    void persist({ gateway_url: url, ...(apiKey ? { gateway_api_key: apiKey } : {}) })
+    await persist({ gateway_url: url, ...(apiKey ? { gateway_api_key: apiKey } : {}) })
     setApiKey('')
+    // The catalogue belongs to the old gateway until it is re-probed.
+    setCatalog(null)
+    void probe()
   }
+
+  const chooseModel = (role: string, alias: string) => {
+    setDraftModels((prev) => ({ ...prev, [role]: alias }))
+    void persist({ models: { [role]: alias } })
+  }
+
+  const roles = Object.keys(settings?.models ?? {}).sort(
+    (a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b),
+  )
 
   if (!open) return null
 
@@ -128,7 +178,7 @@ export function SettingsDrawer({
               hint="Write-only. The backend never echoes the key back."
             />
             <div className="flex items-center gap-3">
-              <button type="button" className="btn-primary" onClick={saveGateway} disabled={saving}>
+              <button type="button" className="btn-primary" onClick={() => void saveGateway()} disabled={saving}>
                 {saving ? 'Saving…' : 'Apply'}
               </button>
               {saved && <span className="text-sm text-success">Applied</span>}
@@ -180,16 +230,81 @@ export function SettingsDrawer({
             </dl>
           </section>
 
-          <section className="space-y-2 border-t border-border pt-5">
-            <h3 className="label-eyebrow">Model routing</h3>
-            <dl className="space-y-1.5 text-sm">
-              {Object.entries(settings?.models ?? {}).map(([role, alias]) => (
-                <div key={role} className="flex justify-between gap-3">
-                  <dt className="text-text-muted capitalize">{role}</dt>
-                  <dd className="font-mono text-xs text-text">{alias}</dd>
-                </div>
-              ))}
-            </dl>
+          <section className="space-y-3 border-t border-border pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="label-eyebrow">Model routing</h3>
+              <button
+                type="button"
+                className="btn-ghost text-xs"
+                onClick={() => void probe()}
+                disabled={probing}
+              >
+                <RefreshCw size={13} className={probing ? 'animate-spin' : undefined} />
+                {probing ? 'Probing…' : catalog ? 'Re-probe' : 'Probe gateway'}
+              </button>
+            </div>
+
+            {probeError && (
+              <p className="flex gap-2 rounded-md bg-danger-subtle px-3 py-2 text-xs text-danger">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>{probeError}</span>
+              </p>
+            )}
+
+            {catalog && (
+              <p className="text-xs text-text-subtle">
+                {catalog.models.length} model{catalog.models.length === 1 ? '' : 's'} offered by{' '}
+                <span className="font-mono">{catalog.gateway_url}</span>
+              </p>
+            )}
+
+            {(settings?.unconfigured_roles.length ?? 0) > 0 && (
+              <p className="rounded-md bg-warning-subtle px-3 py-2 text-xs text-warning">
+                No model selected for {settings?.unconfigured_roles.join(', ')}. Calls on those
+                roles will fail until one is chosen.
+              </p>
+            )}
+
+            <div className="space-y-3">
+              {roles.map((role) => {
+                const selected = draftModels[role] ?? NOT_SELECTED
+                /* Embedding roles lead with the ids that look like embedding
+                   models, but every id stays selectable - the gateway does not
+                   report capability, so the hint must never become a filter. */
+                const options =
+                  role === 'embed' && catalog
+                    ? [
+                        ...catalog.embedding_models,
+                        ...catalog.models.filter((m) => !catalog.embedding_models.includes(m)),
+                      ]
+                    : (catalog?.models ?? [])
+                /* A model set via MODEL_* but absent from the catalogue would
+                   otherwise silently vanish from the dropdown. */
+                const withCurrent =
+                  selected && !options.includes(selected) ? [selected, ...options] : options
+
+                return (
+                  <Select
+                    key={role}
+                    label={role}
+                    hint={ROLE_HINTS[role]}
+                    value={selected}
+                    disabled={saving || (!catalog && !selected)}
+                    onChange={(e) => chooseModel(role, e.target.value)}
+                  >
+                    <option value={NOT_SELECTED}>
+                      {catalog ? '— select a model —' : '— probe the gateway first —'}
+                    </option>
+                    {withCurrent.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </Select>
+                )
+              })}
+            </div>
+
             <p className="flex items-center gap-2 pt-2 text-xs text-text-subtle">
               <Database size={13} />
               Knowledge graph: <span className="font-medium text-text">{settings?.graph_backend}</span>

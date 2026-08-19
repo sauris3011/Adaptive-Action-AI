@@ -15,6 +15,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Fixed set of routing roles. The catalogue behind each one is discovered at
+# runtime from the gateway; the roles themselves are a design decision.
+MODEL_ROLES: tuple[str, ...] = ("triage", "digest", "reason", "embed")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -28,11 +32,17 @@ class Settings(BaseSettings):
     gateway_url: str = "http://localhost:4000"
     gateway_api_key: str = ""
 
-    # --- Model aliases (validated against the live gateway at pre-flight) ----
-    model_triage: str = "gemini-2.5-flash-lite"
-    model_digest: str = "gemini-2.5-flash"
-    model_reason: str = "gemini-2.5-pro"
-    model_embed: str = "text-embedding-004"
+    # --- Model aliases -------------------------------------------------------
+    # Deliberately EMPTY by default: nothing is routed until the operator probes
+    # the gateway catalogue and picks a model per role in the settings drawer.
+    # A pre-populated guess that the gateway does not serve fails at the first
+    # real call with an opaque upstream error, which is worse than an explicit
+    # "not configured". MODEL_* in .env remains an escape hatch for unattended
+    # runs; leave them unset for the UI-driven flow.
+    model_triage: str = ""
+    model_digest: str = ""
+    model_reason: str = ""
+    model_embed: str = ""
 
     # --- TLS (see PRD 7.2 for the trade-off) --------------------------------
     ssl_verify: bool = True
@@ -97,13 +107,17 @@ class Settings(BaseSettings):
 
     @property
     def configured_models(self) -> dict[str, str]:
-        """Every model alias pre-flight must find on the gateway."""
-        return {
-            "triage": self.model_triage,
-            "digest": self.model_digest,
-            "reason": self.model_reason,
-            "embed": self.model_embed,
-        }
+        """Alias per role. An empty string means "not chosen yet"."""
+        return {role: getattr(self, f"model_{role}") for role in MODEL_ROLES}
+
+    def set_model(self, role: str, alias: str) -> None:
+        if role not in MODEL_ROLES:
+            raise ValueError(f"unknown model role '{role}'; expected one of {list(MODEL_ROLES)}")
+        setattr(self, f"model_{role}", alias.strip())
+
+    @property
+    def unconfigured_roles(self) -> list[str]:
+        return [role for role, alias in self.configured_models.items() if not alias]
 
     def ensure_dirs(self) -> None:
         for p in (self.data_dir, self.chroma_dir, self.kuzu_dir, self.upload_dir):

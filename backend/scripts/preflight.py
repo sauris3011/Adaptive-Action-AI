@@ -1,9 +1,9 @@
 """Pre-flight validation (PRD FR-20).
 
 Fails fast naming the exact missing item. Run standalone or from the startup
-scripts. Every check that can be wrong at 2am before a demo is checked here,
-including the one people forget: that the configured model aliases actually
-exist on the gateway.
+scripts. Every check that can be wrong at 2am before a demo is checked here.
+Model aliases are chosen at runtime in the settings drawer, so an unset role is
+reported as a warning rather than a failure.
 
     python backend/scripts/preflight.py
     python backend/scripts/preflight.py --skip-node
@@ -124,18 +124,21 @@ def check_gateway(settings) -> tuple[Check, list[str]]:
         return Check("LLM gateway reachable", False, f"{url}: {exc}{hint}"), []
 
 
-def check_models(settings, available: list[str]) -> list[Check]:
-    """A wrong model ID fails at runtime, mid-demo. Catch it here."""
-    if not available:
-        return [Check("Model IDs", False, "cannot verify - gateway unreachable")]
-    checks = []
+def report_models(settings, available: list[str]) -> list[Check]:
+    """Informational only. Model routing is chosen in the settings drawer at
+    runtime, so an unset role is a WARN, never a boot blocker."""
+    checks: list[Check] = []
     for role, alias in settings.configured_models.items():
-        ok = alias in available
-        detail = alias if ok else (
-            f"'{alias}' NOT offered by the gateway. Available: {', '.join(sorted(available)[:12])}"
-            + (" ..." if len(available) > 12 else "")
-        )
-        checks.append(Check(f"Model [{role}]", ok, detail))
+        if not alias:
+            checks.append(Check(f"Model [{role}]", False,
+                                "not selected - pick one in Settings > Model routing",
+                                fatal=False))
+        elif available and alias not in available:
+            checks.append(Check(f"Model [{role}]", False,
+                                f"{alias} is not in the gateway catalogue", fatal=False))
+        else:
+            checks.append(Check(f"Model [{role}]", True,
+                                f"{alias} (from MODEL_{role.upper()})", fatal=False))
     return checks
 
 
@@ -179,7 +182,7 @@ def main() -> int:
         checks.append(check_data_dir(settings.data_dir))
         gateway_check, available = check_gateway(settings)
         checks.append(gateway_check)
-        checks.extend(check_models(settings, available))
+        checks.extend(report_models(settings, available))
         checks.append(check_graph(settings))
 
         if not settings.ssl_verify:

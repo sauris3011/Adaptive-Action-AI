@@ -35,15 +35,28 @@ class RuntimeSettings(BaseModel):
     ssl_verify: bool
     tls_warning: str | None = None
     models: dict[str, str]
+    unconfigured_roles: list[str]
     graph_backend: str
 
 
 class RuntimeSettingsPatch(BaseModel):
-    """US-8: change gateway config without a restart."""
+    """US-8: change gateway config and model routing without a restart."""
 
     gateway_url: str | None = None
     gateway_api_key: str | None = None
     ssl_verify: bool | None = None
+    # role -> alias. Only the roles present are touched; "" clears a role back
+    # to unconfigured.
+    models: dict[str, str] | None = None
+
+
+class ModelCatalog(BaseModel):
+    """Result of probing GET {gateway}/v1/models (FR-14)."""
+
+    gateway_url: str
+    models: list[str]
+    embedding_models: list[str]
+    probed_at: str
 
 
 class SmokeRequest(BaseModel):
