@@ -63,10 +63,15 @@ Rules:
 
 - Cite clause ids and record refs exactly as they appear in the evidence. Never
   cite a clause that is not in the evidence.
-- governing_clause is the single clause that decides the outcome. If reconciliation
-  found a governing clause, use it.
-- Always state the applicable deadline concretely. Where the deadline comes from a
-  clause, say which.
+- governing_clause must be the clause that AUTHORISES OR REQUIRES the action you put in
+  the `action` field. Check the two against each other before answering: if you recommend
+  a goodwill refund, the governing clause is the goodwill clause, not the chargeback rule;
+  if you recommend requesting merchant contact, it is the clause imposing that
+  precondition, not a clause about credit timing. The highest-precedence clause you
+  retrieved is often NOT the one that governs the action you chose.
+- Always state the applicable deadline concretely, naming the clause it comes from. If
+  the request is a question ABOUT a time limit, the deadline field is where that limit
+  goes - answering "none applicable" to a question about a filing window is wrong.
 - requires_approval is true for anything that moves money or opens a case.
 - Confidence reflects the evidence, not your fluency. Lower it when the evidence is
   thin, when sources conflict unresolved, or when a needed fact is missing.

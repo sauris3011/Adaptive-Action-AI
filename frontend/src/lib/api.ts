@@ -3,6 +3,7 @@ import {
   CaseListSchema,
   GraphViewSchema,
   GroundingStatsSchema,
+  KpiResponseSchema,
   HealthSchema,
   ModelCatalogSchema,
   ReseedResultSchema,
@@ -100,6 +101,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   cases: () => request('/api/copilot/cases', CaseListSchema),
+  kpis: () => request('/api/kpi', KpiResponseSchema),
   groundingStats: () => request('/api/grounding/stats', GroundingStatsSchema),
   graphView: (entity?: string, hops = 2) =>
     request(

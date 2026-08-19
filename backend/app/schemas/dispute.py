@@ -128,11 +128,21 @@ class Recommendation(BaseModel):
         min_length=1,
         description="Clause ids and record refs this rests on, e.g. ['PCT-7.1', 'REC:TXN-9002']",
     )
-    governing_clause: str = Field(description="The single clause that decides the outcome")
+    governing_clause: str = Field(
+        description="The single clause that AUTHORISES OR REQUIRES the action you are "
+                    "recommending in the `action` field. It must be the clause a reviewer "
+                    "would cite to justify that specific action - not merely the "
+                    "highest-ranked clause you retrieved, and not a clause about a "
+                    "different instrument or a different question.",
+    )
     deadline: str = Field(
         max_length=200,
-        description="The applicable deadline stated concretely, e.g. '2 business days from "
-                    "notice'. State 'none applicable' only when genuinely none applies.",
+        description="The applicable deadline, stated concretely with its clause, e.g. "
+                    "'2 business days from notice (PCT-7.1)'. Where you are recommending an "
+                    "action, this is the deadline governing that action. Where you are only "
+                    "answering a question, it is the deadline the answer establishes - a "
+                    "question about a filing window is answered by stating that window here. "
+                    "Use 'none applicable' only when no deadline features in the answer at all.",
     )
     amount: float | None = Field(default=None, description="Monetary amount if the action has one")
     requires_approval: bool = Field(

@@ -281,3 +281,48 @@ export const ACTION_LABELS: Record<string, string> = {
   answer_only: 'Answer only',
 }
 
+
+
+/* --- KPIs (FR-18) ------------------------------------------------------- */
+
+export const KpiSchema = z.object({
+  name: z.string(),
+  value: z.number(),
+  target: z.number(),
+  unit: z.string(),
+  pass: z.boolean(),
+  detail: z.string(),
+})
+export type Kpi = z.infer<typeof KpiSchema>
+
+export const EvalReportSchema = z.object({
+  generated_at: z.string(),
+  age_hours: z.number(),
+  cases: z.number(),
+  passed: z.number(),
+  all_targets_met: z.boolean(),
+  product_kpis: z.array(KpiSchema),
+  technical_kpis: z.array(KpiSchema),
+  assumed_baseline: z.object({
+    task_completion_seconds: z.number(),
+    system_switches: z.number(),
+    measured: z.boolean(),
+    note: z.string(),
+  }),
+  latency_ms: z.record(z.number()),
+})
+
+export const KpiResponseSchema = z.object({
+  eval: EvalReportSchema.nullable(),
+  live: z.object({
+    cases_decided: z.number(),
+    by_outcome: z.record(z.number()),
+    approval_rate_pct: z.number(),
+    avg_latency_ms: z.number(),
+    max_latency_ms: z.number(),
+    avg_confidence: z.number(),
+  }),
+  eval_available: z.boolean(),
+  eval_command: z.string(),
+})
+export type KpiResponse = z.infer<typeof KpiResponseSchema>

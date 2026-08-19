@@ -32,6 +32,9 @@ export function AppHeader({
           <NavLink to="/" className={navClass} end>
             Copilot
           </NavLink>
+          <NavLink to="/metrics" className={navClass}>
+            Metrics
+          </NavLink>
           <NavLink to="/grounding" className={navClass}>
             Grounding
           </NavLink>

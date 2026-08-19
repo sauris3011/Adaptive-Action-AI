@@ -13,8 +13,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import (routes_copilot, routes_core_banking, routes_grounding,
-                     routes_settings, routes_telemetry)
+from app.api import (routes_a2a, routes_copilot, routes_core_banking, routes_grounding,
+                     routes_kpi, routes_settings, routes_telemetry)
+from app import settings_store
 from app.config import get_settings
 from app.db.models import migrate
 from app.graph.base import active_backend, close_store, select_backend
@@ -32,6 +33,9 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     settings.ensure_dirs()
     migrate()
+    # Restore model routing chosen in the drawer on a previous run, so a restart
+    # does not leave the copilot unable to answer (US-8).
+    settings_store.load()
 
     warning = tls_warning()
     if warning:
@@ -75,6 +79,9 @@ app.include_router(routes_copilot.router)
 app.include_router(routes_grounding.router)
 # Mounted in-process: the action workflow calls this over loopback (FR-26).
 app.include_router(routes_core_banking.router)
+app.include_router(routes_kpi.router)
+# Agent card and JSON-RPC method: a conformance slice, not full A2A (FR-25).
+app.include_router(routes_a2a.router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["ops"])
