@@ -37,22 +37,47 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
+# A live probe at selection time is bounded separately from real work: an
+# unreachable gateway must cost the boot a few seconds, not the 120s an
+# ingestion call is allowed to take.
+PROBE_TIMEOUT_S = 20.0
+
+
 class GatewayEmbedder:
     degraded = False
 
     def __init__(self, alias: str) -> None:
-        from langchain_openai import OpenAIEmbeddings
-
         settings = get_settings()
         self.name = f"gateway:{alias}"
-        self._impl = OpenAIEmbeddings(
+        self._impl = self._build(alias, settings)
+        self._probe(alias, settings)
+
+    @staticmethod
+    def _build(alias: str, settings, *, timeout: float | None = None):
+        """A timeout means this is the throwaway probe client, which only ever
+        makes one synchronous call - so it is not given an async client."""
+        from langchain_openai import OpenAIEmbeddings
+
+        kwargs = {} if timeout is None else {"timeout": timeout}
+        return OpenAIEmbeddings(
             model=alias,
             base_url=settings.openai_base_url,
             api_key=settings.gateway_api_key or "sk-no-key-configured",
-            http_client=build_http_client(),
-            http_async_client=build_http_client(is_async=True),
+            http_client=build_http_client(**kwargs),
+            http_async_client=None if timeout else build_http_client(is_async=True),
             check_embedding_ctx_length=False,
         )
+
+    def _probe(self, alias: str, settings) -> None:
+        """Confirm the gateway actually serves this alias, before it is chosen.
+
+        Constructing OpenAIEmbeddings opens no connection, so without this the
+        fallback chain in get_embedder() is dead code: a gateway that does not
+        resolve is still "selected", and the failure surfaces mid-ingestion as
+        an opaque APIConnectionError instead of a quiet downgrade to the local
+        model.
+        """
+        self._build(alias, settings, timeout=PROBE_TIMEOUT_S).embed_query("probe")
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self._impl.embed_documents(texts)
@@ -71,6 +96,12 @@ class LocalEmbedder:
 
         self._fn = embedding_functions.DefaultEmbeddingFunction()
         self.name = "local:all-MiniLM-L6-v2"
+        # Chroma defers building the ONNX session (and fetching the model) to
+        # the first call, so without this a broken onnxruntime is discovered
+        # mid-ingestion rather than here, where the hashed fallback still
+        # applies. Also moves the one-time model download to selection time,
+        # where it is attributable.
+        self.embed_documents(["probe"])
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [list(map(float, v)) for v in self._fn(texts)]
@@ -116,19 +147,27 @@ def get_embedder(force: bool = False) -> Embedder:
     if _embedder is not None and not force:
         return _embedder
 
-    alias = get_settings().model_embed.strip()
-    if alias:
+    settings = get_settings()
+    offline = settings.gateway_offline_reason
+    alias = settings.model_embed.strip()
+
+    if offline is not None:
+        reason = offline
+    elif not alias:
+        reason = "no gateway embedding alias configured"
+    else:
+        reason = ""
         try:
             _embedder = GatewayEmbedder(alias)
             log.info("embedder_selected", backend=_embedder.name)
             return _embedder
         except Exception as exc:  # noqa: BLE001
+            reason = f"gateway alias '{alias}' unreachable: {exc}"
             log.warning("embedder_gateway_unavailable", alias=alias, error=str(exc))
 
     try:
         _embedder = LocalEmbedder()
-        log.info("embedder_selected", backend=_embedder.name,
-                 reason="no gateway embedding alias configured")
+        log.info("embedder_selected", backend=_embedder.name, reason=reason)
         return _embedder
     except Exception as exc:  # noqa: BLE001
         log.warning("embedder_local_unavailable", error=str(exc))

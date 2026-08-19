@@ -64,8 +64,9 @@ def _repair_message(exc: BaseException, schema: type[BaseModel]) -> HumanMessage
 
 
 class ModelNotConfigured(RuntimeError):
-    """No alias picked for a role yet. Distinct from an unknown role so the API
-    can answer 409 (fix it in the settings drawer) rather than 500."""
+    """No usable route for a role: either no alias picked yet, or the gateway is
+    switched off. Distinct from an unknown role so the API can answer 409 (fix it
+    in the settings drawer) rather than 500."""
 
 
 def alias_for(role: str) -> str:
@@ -74,6 +75,15 @@ def alias_for(role: str) -> str:
     models = settings.configured_models
     if role not in models:
         raise KeyError(f"unknown model role '{role}'; expected one of {list(models)}")
+    # Refuse here rather than letting the OpenAI client spend four backoff
+    # retries discovering that the host does not resolve.
+    offline = settings.gateway_offline_reason
+    if offline is not None:
+        raise ModelNotConfigured(
+            f"cannot route the '{role}' role: {offline}. Retrieval, the knowledge "
+            f"graph, KPIs and the mock core-banking API all run without it - the "
+            f"reasoning nodes and the eval harness do not."
+        )
     alias = models[role]
     if not alias:
         raise ModelNotConfigured(

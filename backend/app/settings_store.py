@@ -26,7 +26,7 @@ from app.logging_setup import get_logger
 log = get_logger("settings_store")
 
 FILENAME = "runtime_settings.json"
-PERSISTED = ("gateway_url", "ssl_verify")
+PERSISTED = ("gateway_url", "gateway_enabled", "ssl_verify")
 
 
 def _path():

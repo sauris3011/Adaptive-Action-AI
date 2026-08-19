@@ -32,8 +32,12 @@ class RuntimeSettings(BaseModel):
 
     gateway_url: str
     gateway_api_key_set: bool
+    gateway_enabled: bool
     ssl_verify: bool
     tls_warning: str | None = None
+    # Populated only while the gateway is off, so the drawer can explain the
+    # disabled dropdowns instead of looking broken.
+    gateway_offline_reason: str | None = None
     models: dict[str, str]
     unconfigured_roles: list[str]
     graph_backend: str
@@ -44,6 +48,9 @@ class RuntimeSettingsPatch(BaseModel):
 
     gateway_url: str | None = None
     gateway_api_key: str | None = None
+    # Flip the master switch without a restart, so a demo that starts offline
+    # can be pointed at a live gateway mid-session.
+    gateway_enabled: bool | None = None
     ssl_verify: bool | None = None
     # role -> alias. Only the roles present are touched; "" clears a role back
     # to unconfigured.

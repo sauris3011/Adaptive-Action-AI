@@ -26,6 +26,10 @@ export type TelemetrySummary = z.infer<typeof TelemetrySummarySchema>
 export const RuntimeSettingsSchema = z.object({
   gateway_url: z.string(),
   gateway_api_key_set: z.boolean(),
+  gateway_enabled: z.boolean(),
+  /* Set only while the gateway is off, so the drawer can explain the inert
+     model dropdowns instead of looking broken. */
+  gateway_offline_reason: z.string().nullable(),
   ssl_verify: z.boolean(),
   tls_warning: z.string().nullable(),
   models: z.record(z.string()),

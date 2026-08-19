@@ -16,7 +16,21 @@ langgraph>=0.2.50
 langgraph-checkpoint-sqlite>=2.0
 
 # --- Storage ---
-chromadb>=0.5.20
+# Capped below 1.0 deliberately. The 1.x line replaced the Python/SQLite core
+# with a Rust binding that segfaults on this Windows build: collection.upsert()
+# dies with an access violation inside chromadb/api/rust.py against a freshly
+# created store, so it is not recoverable by clearing the data directory.
+chromadb>=0.5.20,<1.0
+# Transitive via chromadb, pinned only to keep the console readable: chromadb
+# 0.6.x calls posthog.capture() positionally, which 4.x rejected, so every store
+# operation printed "Failed to send telemetry event" even with
+# anonymized_telemetry=False. Cosmetic, but it reads as a fault during a demo.
+posthog<4
+# Pulled in by chromadb for its bundled MiniLM embedder, which is the offline
+# embedding path. Pinned below 1.20: on Windows the newer wheels fail with
+# "DLL load failed while importing onnxruntime_pybind11_state" even with the
+# VC++ redistributable present, and the fix is not available without admin.
+onnxruntime>=1.17,<1.20
 neo4j>=5.26
 kuzu>=0.7
 

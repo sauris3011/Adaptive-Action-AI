@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     gateway_url: str = "http://localhost:4000"
     gateway_api_key: str = ""
 
+    # Master switch for outbound model traffic. False means the gateway is not
+    # contacted at all: embeddings use the bundled local model, the catalogue is
+    # not probed, and a chat call fails immediately with "gateway disabled"
+    # instead of a DNS error four retries deep. This is the offline-demo posture
+    # - grounding, graph, KPI and the mock core-banking API all still work; only
+    # the reasoning nodes need a gateway.
+    gateway_enabled: bool = True
+
     # --- Model aliases -------------------------------------------------------
     # Deliberately EMPTY by default: nothing is routed until the operator probes
     # the gateway catalogue and picks a model per role in the settings drawer.
@@ -99,6 +107,18 @@ class Settings(BaseSettings):
     @property
     def upload_dir(self) -> Path:
         return self.data_dir / "uploads"
+
+    @property
+    def gateway_offline_reason(self) -> str | None:
+        """Why no gateway call may be attempted, or None if one may.
+
+        One place decides this so the embedder, the catalogue, the chat factory
+        and pre-flight all refuse for the same stated reason.
+        """
+        if not self.gateway_enabled:
+            return ("the LLM gateway is disabled (GATEWAY_ENABLED=false in .env, "
+                    "or the toggle in Settings)")
+        return None
 
     @property
     def openai_base_url(self) -> str:

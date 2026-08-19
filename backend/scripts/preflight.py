@@ -102,31 +102,46 @@ def check_env_file() -> Check:
 
 
 def check_gateway(settings) -> tuple[Check, list[str]]:
-    """Reachability plus the live model catalogue."""
+    """Reachability plus the live model catalogue.
+
+    Skipped entirely when the gateway is switched off, so an offline demo does
+    not pay a DNS timeout to be told about a host it was never going to call.
+    """
     import httpx
 
+    if not settings.gateway_enabled:
+        # Same convention as the TLS bypass below: a deliberate downgrade passes
+        # the check, but says loudly what it costs.
+        return Check("LLM gateway", True,
+                     "DISABLED (GATEWAY_ENABLED=false) - local embeddings, no "
+                     "outbound model traffic; reasoning nodes answer 409",
+                     fatal=False), []
     if not settings.gateway_api_key:
-        return Check("LLM gateway reachable", False,
+        return Check("LLM gateway", False,
                      "GATEWAY_API_KEY is empty - set it in .env"), []
     url = f"{settings.openai_base_url}/models"
     try:
         with httpx.Client(verify=settings.ssl_verify, timeout=15.0) as client:
             resp = client.get(url, headers={"Authorization": f"Bearer {settings.gateway_api_key}"})
         if resp.status_code != 200:
-            return Check("LLM gateway reachable", False,
+            return Check("LLM gateway", False,
                          f"{url} returned HTTP {resp.status_code}: {resp.text[:200]}"), []
         available = [m.get("id", "") for m in resp.json().get("data", [])]
-        return Check("LLM gateway reachable", True,
+        return Check("LLM gateway", True,
                      f"{url} ({len(available)} models offered)"), available
     except Exception as exc:  # noqa: BLE001
         hint = "" if settings.ssl_verify is False else \
             " - if this is a TLS error behind the corporate proxy, set SSL_VERIFY=false"
-        return Check("LLM gateway reachable", False, f"{url}: {exc}{hint}"), []
+        return Check("LLM gateway", False, f"{url}: {exc}{hint}"), []
 
 
 def report_models(settings, available: list[str]) -> list[Check]:
     """Informational only. Model routing is chosen in the settings drawer at
     runtime, so an unset role is a WARN, never a boot blocker."""
+    if not settings.gateway_enabled:
+        return [Check("Model routing", True,
+                      "inert - gateway disabled; embeddings served locally",
+                      fatal=False)]
     checks: list[Check] = []
     for role, alias in settings.configured_models.items():
         if not alias:

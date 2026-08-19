@@ -34,6 +34,8 @@ def _current() -> RuntimeSettings:
     return RuntimeSettings(
         gateway_url=s.gateway_url,
         gateway_api_key_set=bool(s.gateway_api_key),
+        gateway_enabled=s.gateway_enabled,
+        gateway_offline_reason=s.gateway_offline_reason,
         ssl_verify=s.ssl_verify,
         tls_warning=tls_warning(),
         models=s.configured_models,
@@ -75,6 +77,9 @@ def update_settings(patch: RuntimeSettingsPatch) -> RuntimeSettings:
     if patch.gateway_api_key is not None:
         s.gateway_api_key = patch.gateway_api_key
         changed.append("gateway_api_key")
+    if patch.gateway_enabled is not None and patch.gateway_enabled != s.gateway_enabled:
+        s.gateway_enabled = patch.gateway_enabled
+        changed.append("gateway_enabled")
     if patch.ssl_verify is not None:
         s.ssl_verify = patch.ssl_verify
         changed.append("ssl_verify")
@@ -96,7 +101,9 @@ def update_settings(patch: RuntimeSettingsPatch) -> RuntimeSettings:
         get_model.cache_clear()
         # A changed embedding alias must also drop the cached embedder, or the
         # grounding panel keeps reporting the previous backend.
-        if any(field == "model_embed" for field in changed):
+        # Toggling the gateway changes which backend get_embedder() picks, so it
+        # invalidates the cached embedder just as a changed alias does.
+        if any(field in ("model_embed", "gateway_enabled") for field in changed):
             reset_embedder()
         settings_store.save()
         log.warning("runtime_settings_changed", fields=changed,

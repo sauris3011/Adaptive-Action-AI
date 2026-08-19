@@ -41,6 +41,19 @@ Backend only:
 ./startup.sh --no-ui
 ```
 
+### Running without a gateway
+
+`GATEWAY_ENABLED=false` in `.env` turns off all outbound model traffic. Retrieval, the knowledge
+graph, the relational store, KPIs and the mock core-banking API run exactly as they do online;
+embeddings are served by Chroma's bundled MiniLM (`local:all-MiniLM-L6-v2`, 384d), which is a real
+semantic embedder, not the degraded hashing fallback. The reasoning nodes are the only thing that
+needs a gateway, and while it is off they answer `409` with the reason rather than failing four
+backoff retries deep in an unreachable host. The eval harness drives the same reasoning nodes, so
+`run_eval.py` needs a gateway too.
+
+Turn it back on by setting `GATEWAY_ENABLED=true` (and pointing `GATEWAY_URL` at a live proxy), or
+with the **Use the LLM gateway** toggle in Settings, which takes effect without a restart.
+
 ## Pre-flight
 
 ```bash
@@ -49,7 +62,9 @@ Backend only:
 
 Verifies venv, Python ≥3.11, Node ≥20, port 8787 free, data dir writable, gateway reachable, **every
 configured model alias present in the gateway's live `/v1/models`**, and Neo4j reachable-or-fallback.
-Fails fast naming the exact missing item.
+Fails fast naming the exact missing item. With `GATEWAY_ENABLED=false` the gateway and model-alias
+checks are skipped and reported as such, rather than timing out against a host that will not be
+called.
 
 The model-alias check matters: a wrong ID fails at runtime, mid-demo. Pre-flight prints what the
 gateway actually offers.

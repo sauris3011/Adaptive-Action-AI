@@ -71,6 +71,7 @@ export const api = {
     patch: Partial<{
       gateway_url: string
       gateway_api_key: string
+      gateway_enabled: boolean
       ssl_verify: boolean
       models: Record<string, string>
     }>,

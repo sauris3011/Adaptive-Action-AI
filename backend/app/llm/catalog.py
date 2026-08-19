@@ -34,6 +34,12 @@ def probe_models(timeout: float = 15.0) -> list[str]:
     one place the user finds out their gateway URL or key is wrong.
     """
     settings = get_settings()
+    offline = settings.gateway_offline_reason
+    if offline is not None:
+        raise RuntimeError(
+            f"Not probing the catalogue: {offline}. Turn the gateway back on to "
+            f"pick models."
+        )
     url = f"{settings.openai_base_url}/models"
     headers = {"Authorization": f"Bearer {settings.gateway_api_key}"} if settings.gateway_api_key else {}
 

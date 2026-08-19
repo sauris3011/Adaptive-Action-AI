@@ -82,9 +82,12 @@ export function SettingsDrawer({
         const parts = splitUrl(s.gateway_url)
         setBase(parts.base)
         setPort(parts.port)
+        // Probing while the gateway is off returns 502 by design; showing that
+        // as an error every time the drawer opens would read as a fault rather
+        // than the deliberate setting it is. The notice below explains instead.
+        if (s.gateway_enabled) void probe()
       })
       .catch((e) => setError(String(e.message ?? e)))
-    void probe()
   }, [open, probe])
 
   useEffect(() => {
@@ -115,7 +118,15 @@ export function SettingsDrawer({
     setApiKey('')
     // The catalogue belongs to the old gateway until it is re-probed.
     setCatalog(null)
-    void probe()
+    if (settings?.gateway_enabled) void probe()
+  }
+
+  const setGatewayEnabled = async (enabled: boolean) => {
+    await persist({ gateway_enabled: enabled })
+    setCatalog(null)
+    setProbeError(null)
+    // Turning it on is the moment the catalogue becomes knowable.
+    if (enabled) void probe()
   }
 
   const chooseModel = (role: string, alias: string) => {
@@ -156,6 +167,30 @@ export function SettingsDrawer({
 
           <section className="space-y-3">
             <h3 className="label-eyebrow">LiteLLM Gateway</h3>
+            <div className="flex items-start justify-between gap-4">
+              <label htmlFor="gateway-toggle" className="text-sm text-text">
+                Use the LLM gateway
+                <span className="mt-0.5 block text-xs text-text-muted">
+                  Off means no outbound model traffic: local embeddings, and the
+                  reasoning nodes decline rather than call out.
+                </span>
+              </label>
+              <Toggle
+                id="gateway-toggle"
+                checked={settings?.gateway_enabled ?? false}
+                onChange={(enabled) => void setGatewayEnabled(enabled)}
+                label="Use the LLM gateway"
+              />
+            </div>
+            {settings?.gateway_offline_reason && (
+              <p className="flex gap-2 rounded-md bg-warning-subtle px-3 py-2 text-xs text-warning">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Offline mode: {settings.gateway_offline_reason}. Retrieval, the knowledge
+                  graph and the mock core-banking API are unaffected.
+                </span>
+              </p>
+            )}
             <Field
               label="Gateway URL"
               value={base}
@@ -237,7 +272,7 @@ export function SettingsDrawer({
                 type="button"
                 className="btn-ghost text-xs"
                 onClick={() => void probe()}
-                disabled={probing}
+                disabled={probing || !settings?.gateway_enabled}
               >
                 <RefreshCw size={13} className={probing ? 'animate-spin' : undefined} />
                 {probing ? 'Probing…' : catalog ? 'Re-probe' : 'Probe gateway'}
@@ -258,7 +293,14 @@ export function SettingsDrawer({
               </p>
             )}
 
-            {(settings?.unconfigured_roles.length ?? 0) > 0 && (
+            {!settings?.gateway_enabled && (
+              <p className="rounded-md bg-warning-subtle px-3 py-2 text-xs text-warning">
+                The gateway is off, so nothing routes to these roles and the catalogue
+                cannot be probed. Embeddings are served locally.
+              </p>
+            )}
+
+            {settings?.gateway_enabled && (settings?.unconfigured_roles.length ?? 0) > 0 && (
               <p className="rounded-md bg-warning-subtle px-3 py-2 text-xs text-warning">
                 No model selected for {settings?.unconfigured_roles.join(', ')}. Calls on those
                 roles will fail until one is chosen.
