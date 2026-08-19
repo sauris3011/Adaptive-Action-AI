@@ -5,6 +5,7 @@ import { SettingsDrawer } from './components/SettingsDrawer/SettingsDrawer'
 import { useTelemetry } from './lib/useTelemetry'
 import { CopilotPage } from './routes/CopilotPage'
 import { GroundingPage } from './routes/GroundingPage'
+import { MetricsPage } from './routes/MetricsPage'
 
 export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -20,6 +21,7 @@ export default function App() {
       <main className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6">
         <Routes>
           <Route path="/" element={<CopilotPage />} />
+          <Route path="/metrics" element={<MetricsPage />} />
           <Route path="/grounding" element={<GroundingPage />} />
         </Routes>
       </main>

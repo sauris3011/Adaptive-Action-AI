@@ -1,57 +1,24 @@
 import { z } from 'zod'
+import {
+  CaseListSchema,
+  GraphViewSchema,
+  GroundingStatsSchema,
+  KpiResponseSchema,
+  HealthSchema,
+  ModelCatalogSchema,
+  ReseedResultSchema,
+  RunSchema,
+  RuntimeSettingsSchema,
+  SearchResultSchema,
+  SmokeResponseSchema,
+  TelemetrySummarySchema,
+  UploadResultSchema,
+} from './schemas'
 
-/* Every backend response is parsed through a Zod schema before it reaches a
-   component (master prompt section 2: Pydantic in Python / Zod in TypeScript).
-   The backend already validates its own LLM output with Pydantic; this is the
-   second gate, so a shape drift shows up as a named parse error rather than an
-   undefined halfway down a render tree. */
+/* The HTTP client. Wire-format schemas live in schemas.ts and are re-exported
+   here so every component keeps importing from one place. */
 
-export const TelemetrySummarySchema = z.object({
-  active_calls: z.number(),
-  total_calls: z.number(),
-  input_tokens: z.number(),
-  output_tokens: z.number(),
-  total_tokens: z.number(),
-  estimated_cost_usd: z.number(),
-  cache_hits: z.number(),
-  cache_misses: z.number(),
-  cache_hit_ratio: z.number(),
-  errors: z.number(),
-})
-export type TelemetrySummary = z.infer<typeof TelemetrySummarySchema>
-
-export const RuntimeSettingsSchema = z.object({
-  gateway_url: z.string(),
-  gateway_api_key_set: z.boolean(),
-  ssl_verify: z.boolean(),
-  tls_warning: z.string().nullable(),
-  models: z.record(z.string()),
-  unconfigured_roles: z.array(z.string()),
-  graph_backend: z.string(),
-})
-export type RuntimeSettings = z.infer<typeof RuntimeSettingsSchema>
-
-/* Discovered from the gateway on demand - never a hardcoded list in the UI. */
-export const ModelCatalogSchema = z.object({
-  gateway_url: z.string(),
-  models: z.array(z.string()),
-  embedding_models: z.array(z.string()),
-  probed_at: z.string(),
-})
-export type ModelCatalog = z.infer<typeof ModelCatalogSchema>
-
-export const HealthSchema = z.object({
-  status: z.string(),
-  version: z.string(),
-  graph_backend: z.string(),
-  tls_warning: z.string().nullable(),
-})
-export type Health = z.infer<typeof HealthSchema>
-
-export const SmokeResponseSchema = z.object({
-  reply: z.string(),
-  model_role: z.string(),
-})
+export * from './schemas'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -65,7 +32,13 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
   try {
     resp = await fetch(path, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+      /* FormData must set its own multipart boundary, so the JSON content type
+         is omitted rather than overridden - an explicit header here would break
+         the upload silently. */
+      headers:
+        init?.body instanceof FormData
+          ? { ...(init?.headers ?? {}) }
+          : { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     })
   } catch (cause) {
     throw new ApiError(`Cannot reach the backend at ${path}. Is it running on :8787?`)
@@ -111,6 +84,49 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ prompt }),
     }),
+  submitDispute: (body: {
+    text: string
+    transaction_id?: string | null
+    customer_id?: string | null
+  }) => request('/api/copilot/disputes', RunSchema, { method: 'POST', body: JSON.stringify(body) }),
+  getRun: (runId: string) => request(`/api/copilot/runs/${runId}`, RunSchema),
+  approveRun: (runId: string, body: { approver: string; approver_role: string; note?: string }) =>
+    request(`/api/copilot/runs/${runId}/approve`, RunSchema, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  rejectRun: (runId: string, body: { approver: string; reason: string }) =>
+    request(`/api/copilot/runs/${runId}/reject`, RunSchema, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  cases: () => request('/api/copilot/cases', CaseListSchema),
+  kpis: () => request('/api/kpi', KpiResponseSchema),
+  groundingStats: () => request('/api/grounding/stats', GroundingStatsSchema),
+  graphView: (entity?: string, hops = 2) =>
+    request(
+      entity
+        ? `/api/grounding/graph?entity=${encodeURIComponent(entity)}&hops=${hops}`
+        : '/api/grounding/graph',
+      GraphViewSchema,
+    ),
+  groundingSearch: (q: string, transactionId?: string) =>
+    request(
+      `/api/grounding/search?q=${encodeURIComponent(q)}` +
+        (transactionId ? `&transaction_id=${encodeURIComponent(transactionId)}` : ''),
+      SearchResultSchema,
+    ),
+  reseed: () => request('/api/grounding/reseed', ReseedResultSchema, { method: 'POST' }),
+  uploadDocument: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    /* No Content-Type header: the browser must set the multipart boundary. */
+    return request('/api/grounding/upload', UploadResultSchema, {
+      method: 'POST',
+      body,
+      headers: {},
+    })
+  },
 }
 
 export function formatCost(usd: number): string {

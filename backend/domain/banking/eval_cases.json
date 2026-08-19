@@ -1,0 +1,478 @@
+{
+  "_comment": "Labelled eval set for PRD 9.1. Twenty cases: nine dispute-intake (action path), eleven policy questions (US-5). Five exercise the engineered conflicts, three of them the canonical C1/C2/C3. Labels are derived from the corpus, not from observed model output - a label written after seeing the answer measures nothing.",
+  "_scoring": {
+    "action": "correct when the produced action is in acceptable_actions",
+    "clause": "correct when governing_clause is in acceptable_clauses",
+    "citation": "cited when every ref in must_cite appears in the recommendation's citations",
+    "conflict": "detected when a reported conflict names a clause in conflict.governing_any (defaulting to conflict.governing) AND agrees on is_true_conflict",
+    "deadline": "stated when deadline is non-empty and not a 'none applicable' variant; only scored where deadline_required is true",
+    "automated": "resolved without escalation when the action is correct and is not 'decline'"
+  },
+  "cases": [
+    {
+      "id": "EV-01",
+      "conflict_id": "C3",
+      "text": "Cardholder A. Sharma says she did not authorise a 420 USD charge from Cobalt Travel on her Signature card. Please open the dispute and put it right.",
+      "transaction_id": "TXN-9001",
+      "customer_id": "CUST-1001",
+      "acceptable_actions": [
+        "route_to_fraud_ops"
+      ],
+      "acceptable_clauses": [
+        "FSP-1.2"
+      ],
+      "must_cite": [
+        "FSP-1.2"
+      ],
+      "conflict": {
+        "governing": "FSP-1.2",
+        "superseded": [
+          "BDP-2.1"
+        ],
+        "is_true": true
+      },
+      "deadline_required": false,
+      "note": "The fraud flag exists only in the transaction record. A documents-only system cannot resolve this."
+    },
+    {
+      "id": "EV-02",
+      "conflict_id": "C1",
+      "text": "A. Sharma ordered a 189.99 USD item from Northwind Electronics and it never arrived. Please open the dispute and apply provisional credit.",
+      "transaction_id": "TXN-9002",
+      "customer_id": "CUST-1001",
+      "acceptable_actions": [
+        "provisional_credit"
+      ],
+      "acceptable_clauses": [
+        "PCT-7.1"
+      ],
+      "must_cite": [
+        "PCT-7.1"
+      ],
+      "conflict": {
+        "governing": "PCT-7.1",
+        "superseded": [
+          "BDP-4.2",
+          "REG-E-3"
+        ],
+        "is_true": true
+      },
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "2 business day"
+      ],
+      "note": "The regulatory 10 days is a ceiling; the stricter product term binds."
+    },
+    {
+      "id": "EV-03",
+      "conflict_id": "C2",
+      "text": "R. Okafor disputes a 34.50 USD Aurora Streaming charge for content never received. Please refund him.",
+      "transaction_id": "TXN-9003",
+      "customer_id": "CUST-1002",
+      "acceptable_actions": [
+        "goodwill_refund"
+      ],
+      "acceptable_clauses": [
+        "GRS-2.3"
+      ],
+      "must_cite": [
+        "GRS-2.3",
+        "CNR-11.4"
+      ],
+      "conflict": {
+        "governing": "GRS-2.3",
+        "governing_any": [
+          "GRS-2.3",
+          "CNR-11.4"
+        ],
+        "superseded": [],
+        "is_true": false
+      },
+      "deadline_required": false,
+      "note": "Not a true conflict: goodwill refund and chargeback are different instruments. The request is a refund, so GRS-2.3 governs and CNR-11.4 must still be surfaced as the other route."
+    },
+    {
+      "id": "EV-04",
+      "conflict_id": null,
+      "text": "M. Lindqvist reports an unauthorised 899 USD charge at Northwind Electronics on a new Signature account. Please open the dispute and issue provisional credit.",
+      "transaction_id": "TXN-9004",
+      "customer_id": "CUST-1003",
+      "acceptable_actions": [
+        "provisional_credit"
+      ],
+      "acceptable_clauses": [
+        "PCT-7.1"
+      ],
+      "must_cite": [
+        "PCT-7.1"
+      ],
+      "conflict": null,
+      "deadline_required": true,
+      "note": "New account permits 20 days under REG-E-3, but PCT-7.1's 2 days is more favourable and binds."
+    },
+    {
+      "id": "EV-05",
+      "conflict_id": null,
+      "text": "T. Alvarez says a 62.15 USD Harbour Grocers charge was billed twice on his Classic card. Please open the dispute and credit him.",
+      "transaction_id": "TXN-9005",
+      "customer_id": "CUST-1004",
+      "acceptable_actions": [
+        "provisional_credit"
+      ],
+      "acceptable_clauses": [
+        "BDP-4.2",
+        "REG-E-3"
+      ],
+      "must_cite": [],
+      "conflict": null,
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "10 business day"
+      ],
+      "note": "Classic card, so PCT-7.1 does not apply. Both BDP-4.2 and REG-E-3 state 10 business days at different tiers; either may be cited as governing.",
+      "must_cite_any": [
+        "BDP-4.2",
+        "REG-E-3"
+      ]
+    },
+    {
+      "id": "EV-06",
+      "conflict_id": "C3",
+      "text": "R. Okafor reports a 1240 USD Cobalt Travel charge he never made. Please open the dispute and refund him.",
+      "transaction_id": "TXN-9006",
+      "customer_id": "CUST-1002",
+      "acceptable_actions": [
+        "route_to_fraud_ops"
+      ],
+      "acceptable_clauses": [
+        "FSP-1.2"
+      ],
+      "must_cite": [
+        "FSP-1.2"
+      ],
+      "conflict": {
+        "governing": "FSP-1.2",
+        "superseded": [
+          "BDP-2.1"
+        ],
+        "is_true": true
+      },
+      "deadline_required": false,
+      "note": "Same record-only fraud flag on a Standard cardholder, to show the routing is tier-independent."
+    },
+    {
+      "id": "EV-07",
+      "conflict_id": null,
+      "text": "A. Sharma wants us to file a chargeback against Northwind Electronics for the 189.99 USD order that never arrived. Can we file it now?",
+      "transaction_id": "TXN-9002",
+      "customer_id": "CUST-1001",
+      "acceptable_actions": [
+        "request_merchant_contact",
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "CNR-11.4"
+      ],
+      "must_cite": [
+        "CNR-11.4"
+      ],
+      "conflict": null,
+      "deadline_required": false,
+      "note": "Chargeback instrument specifically, so merchant contact is a precondition."
+    },
+    {
+      "id": "EV-08",
+      "conflict_id": "C2",
+      "text": "R. Okafor wants a chargeback against Aurora Streaming for the 34.50 USD content he never received. What do we need before filing?",
+      "transaction_id": "TXN-9003",
+      "customer_id": "CUST-1002",
+      "acceptable_actions": [
+        "request_merchant_contact",
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "CNR-11.4"
+      ],
+      "must_cite": [
+        "CNR-11.4"
+      ],
+      "conflict": null,
+      "deadline_required": false,
+      "note": "Same transaction as EV-03 but the chargeback route, which does require merchant contact."
+    },
+    {
+      "id": "EV-09",
+      "conflict_id": "C3",
+      "text": "A. Sharma says her Signature card was stolen and a 420 USD Cobalt Travel charge followed. Please handle it.",
+      "transaction_id": "TXN-9001",
+      "customer_id": "CUST-1001",
+      "acceptable_actions": [
+        "route_to_fraud_ops"
+      ],
+      "acceptable_clauses": [
+        "FSP-1.2"
+      ],
+      "must_cite": [
+        "FSP-1.2"
+      ],
+      "conflict": {
+        "governing": "FSP-1.2",
+        "superseded": [
+          "BDP-2.1"
+        ],
+        "is_true": true
+      },
+      "deadline_required": false,
+      "note": "Different phrasing of EV-01: routing must not depend on the words the cardholder chose."
+    },
+    {
+      "id": "EV-10",
+      "conflict_id": "C1",
+      "text": "When do we have to give a Signature cardholder provisional credit on a disputed transaction?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "PCT-7.1"
+      ],
+      "must_cite": [
+        "PCT-7.1"
+      ],
+      "conflict": {
+        "governing": "PCT-7.1",
+        "superseded": [
+          "BDP-4.2",
+          "REG-E-3"
+        ],
+        "is_true": true
+      },
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "2 business day"
+      ],
+      "note": "C1 with no transaction context: the conflict must still be found from the corpus alone."
+    },
+    {
+      "id": "EV-11",
+      "conflict_id": null,
+      "text": "What is the regulatory maximum for issuing provisional credit, and does it change for a new account?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "REG-E-3"
+      ],
+      "must_cite": [
+        "REG-E-3"
+      ],
+      "conflict": null,
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "10 business day"
+      ]
+    },
+    {
+      "id": "EV-12",
+      "conflict_id": null,
+      "text": "Do we need evidence of merchant contact before filing a goods-not-received chargeback?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "CNR-11.4"
+      ],
+      "must_cite": [
+        "CNR-11.4"
+      ],
+      "conflict": null,
+      "deadline_required": false
+    },
+    {
+      "id": "EV-13",
+      "conflict_id": null,
+      "text": "What is the auto-approval threshold for a goodwill refund, and does it need a team lead?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "GRS-2.3",
+        "GRS-2.7"
+      ],
+      "must_cite": [
+        "GRS-2.3"
+      ],
+      "conflict": null,
+      "deadline_required": false
+    },
+    {
+      "id": "EV-14",
+      "conflict_id": null,
+      "text": "Can an agent approve a 600 USD provisional credit on their own authority?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "BDP-3.4"
+      ],
+      "must_cite": [
+        "BDP-3.4"
+      ],
+      "conflict": null,
+      "deadline_required": false
+    },
+    {
+      "id": "EV-15",
+      "conflict_id": null,
+      "text": "How many goodwill refunds can one customer receive in a rolling twelve months?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "GRS-5.2"
+      ],
+      "must_cite": [
+        "GRS-5.2"
+      ],
+      "conflict": null,
+      "deadline_required": false
+    },
+    {
+      "id": "EV-16",
+      "conflict_id": null,
+      "text": "What is the filing window for a chargeback, and what is the outer limit?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "CNR-4.2"
+      ],
+      "must_cite": [
+        "CNR-4.2"
+      ],
+      "conflict": null,
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "120"
+      ]
+    },
+    {
+      "id": "EV-17",
+      "conflict_id": null,
+      "text": "Once fraud is confirmed, how long do we have to report it to the card scheme?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "CNR-12.9"
+      ],
+      "must_cite": [
+        "CNR-12.9"
+      ],
+      "conflict": null,
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "30"
+      ]
+    },
+    {
+      "id": "EV-18",
+      "conflict_id": null,
+      "text": "How are business days counted when we calculate a dispute deadline?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "BDP-7.1"
+      ],
+      "must_cite": [
+        "BDP-7.1"
+      ],
+      "conflict": null,
+      "deadline_required": false
+    },
+    {
+      "id": "EV-19",
+      "conflict_id": null,
+      "text": "When a fraud-engine flag is confirmed, what happens to the cardholder's card?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "FSP-3.1"
+      ],
+      "must_cite": [
+        "FSP-3.1"
+      ],
+      "conflict": null,
+      "deadline_required": false
+    },
+    {
+      "id": "EV-20",
+      "conflict_id": null,
+      "text": "How long do we have to complete a dispute investigation, and when must the customer be told the outcome?",
+      "transaction_id": null,
+      "customer_id": null,
+      "acceptable_actions": [
+        "answer_only"
+      ],
+      "acceptable_clauses": [
+        "REG-E-4",
+        "REG-E-5"
+      ],
+      "must_cite": [
+        "REG-E-4"
+      ],
+      "conflict": null,
+      "deadline_required": true,
+      "deadline_must_mention": [
+        "45"
+      ]
+    }
+  ],
+  "_label_corrections": [
+    {
+      "case": "EV-03",
+      "was": "conflict.governing = CNR-11.4",
+      "now": "conflict.governing = GRS-2.3",
+      "why": "The original label conflated 'highest tier' with 'governs this request'. For an APPARENT conflict the governing clause is the one covering the instrument actually asked for, and EV-03 asks for a refund. PRD section 4 (C2) says the copilot should offer the goodwill route as immediately available while noting the chargeback route still requires merchant contact - which is GRS-2.3 governing, with CNR-11.4 as the different instrument. EV-08 asks for a chargeback on the same transaction and still expects CNR-11.4. This correction makes the label MORE specific, not more permissive."
+    },
+    {
+      "case": "EV-05",
+      "was": "acceptable_clauses = [BDP-4.2]",
+      "now": "acceptable_clauses = [BDP-4.2, REG-E-3], must_cite_any",
+      "why": "Both clauses state the same 10-business-day provisional credit period for a Classic cardholder, at different tiers. Under the declared precedence ladder the higher tier governs where both speak, which makes REG-E-3 defensible; the operational reading makes BDP-4.2 defensible. The original label picked one without justification. Genuinely ambiguous, so either is accepted."
+    },
+    {
+      "case": "EV-03",
+      "was": "conflict.governing pinned to one clause (first CNR-11.4, then GRS-2.3)",
+      "now": "conflict.governing_any = [GRS-2.3, CNR-11.4], is_true still pinned to false",
+      "why": "Successive cold runs named OPPOSITE sides of the C2 pair as governing while classifying it correctly as apparent both times. For an apparent conflict the pair is symmetric - the two clauses govern different instruments - so which one is 'governing' depends on which instrument the reader has in mind, and pinning either side scores a correct answer as wrong about half the time. The substantive check the metric exists for, true conflict versus apparent, stays strict."
+    },
+    {
+      "case": "EV-01, EV-06, EV-09 (all fraud-routed)",
+      "was": "deadline_required = true",
+      "now": "deadline_required = false",
+      "why": "FSP-1.2 transfers ownership of the case to Fraud Operations and FSP-5.1 transfers the cardholder communication, so no disputes deadline binds the agent who routed it. CNR-12.9's 30 days attaches to CONFIRMED fraud, which has not happened at recommendation time. Applied to all three fraud-routed cases including the two that passed, so the change follows from the corpus rather than from which cases failed."
+    }
+  ]
+}

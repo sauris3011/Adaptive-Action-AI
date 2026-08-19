@@ -18,8 +18,10 @@ from fastapi import APIRouter, HTTPException
 from app.config import MODEL_ROLES, get_settings
 from app.graph.base import active_backend
 from app.llm.catalog import looks_like_embedding, probe_models
+from app.llm.embeddings import reset_embedder
 from app.llm.factory import get_model
 from app.schemas.api import ModelCatalog, RuntimeSettings, RuntimeSettingsPatch
+from app import settings_store
 from app.logging_setup import get_logger
 from app.tls import tls_warning
 
@@ -92,6 +94,11 @@ def update_settings(patch: RuntimeSettingsPatch) -> RuntimeSettings:
     if changed:
         # Cached clients hold the old base_url / key / TLS policy / alias.
         get_model.cache_clear()
+        # A changed embedding alias must also drop the cached embedder, or the
+        # grounding panel keeps reporting the previous backend.
+        if any(field == "model_embed" for field in changed):
+            reset_embedder()
+        settings_store.save()
         log.warning("runtime_settings_changed", fields=changed,
                     ssl_verify=s.ssl_verify, models=s.configured_models)
 
