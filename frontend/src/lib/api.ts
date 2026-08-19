@@ -151,6 +151,73 @@ export const TIER_LABELS: Record<number, string> = {
   4: 'Product terms & conditions',
 }
 
+
+/* --- Copilot workflow (Stage 3) ---------------------------------------- */
+
+export const TriageSchema = z.object({
+  intent: z.enum(['dispute_intake', 'policy_question']),
+  transaction_id: z.string().nullable(),
+  customer_id: z.string().nullable(),
+  merchant_hint: z.string().nullable(),
+  amount: z.number().nullable(),
+  reason_code: z.string(),
+  summary: z.string(),
+  retrieval_query: z.string(),
+})
+
+export const ConflictSchema = z.object({
+  description: z.string(),
+  governing_clause: z.string(),
+  governing_tier: z.number(),
+  superseded_clauses: z.array(z.string()),
+  is_true_conflict: z.boolean(),
+  resolution_basis: z.string(),
+})
+export type Conflict = z.infer<typeof ConflictSchema>
+
+export const ReconciliationSchema = z.object({
+  conflicts: z.array(ConflictSchema),
+  notes: z.string(),
+})
+
+export const RecommendationSchema = z.object({
+  action: z.string(),
+  headline: z.string(),
+  rationale: z.string(),
+  citations: z.array(z.string()),
+  governing_clause: z.string(),
+  deadline: z.string(),
+  amount: z.number().nullable(),
+  requires_approval: z.boolean(),
+  confidence: z.number(),
+  caveats: z.string(),
+})
+export type Recommendation = z.infer<typeof RecommendationSchema>
+
+export const RunSchema = z.object({
+  run_id: z.string().nullable(),
+  started_at: z.string().nullable(),
+  elapsed_ms: z.number(),
+  request_text: z.string().nullable(),
+  transaction_id: z.string().nullable(),
+  customer_id: z.string().nullable(),
+  triage: TriageSchema.nullable(),
+  evidence: z.array(EvidenceSchema),
+  reconciliation: ReconciliationSchema.nullable(),
+  recommendation: RecommendationSchema.nullable(),
+  status: z.string(),
+})
+export type Run = z.infer<typeof RunSchema>
+
+export const ACTION_LABELS: Record<string, string> = {
+  provisional_credit: 'Issue provisional credit',
+  goodwill_refund: 'Issue goodwill refund',
+  route_to_fraud_ops: 'Route to Fraud Operations',
+  request_merchant_contact: 'Request merchant contact',
+  decline: 'Decline',
+  answer_only: 'Answer only',
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message)
@@ -215,6 +282,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ prompt }),
     }),
+  submitDispute: (body: {
+    text: string
+    transaction_id?: string | null
+    customer_id?: string | null
+  }) => request('/api/copilot/disputes', RunSchema, { method: 'POST', body: JSON.stringify(body) }),
   groundingStats: () => request('/api/grounding/stats', GroundingStatsSchema),
   graphView: (entity?: string, hops = 2) =>
     request(

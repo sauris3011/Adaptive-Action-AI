@@ -1,27 +1,61 @@
-import { Play, TriangleAlert } from 'lucide-react'
+import { Send, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { ConflictBanner } from '../components/Copilot/ConflictBanner'
+import { EvidencePanel } from '../components/Copilot/EvidencePanel'
+import { RecommendationCard } from '../components/Copilot/RecommendationCard'
+import { ApiError, api, type Run } from '../lib/api'
 
-/* Stage 1: the walking-skeleton probe.
-   This exercises the whole LLM path - gateway, TLS policy, retries, guard,
-   ledger - and moves the header monitor, which is the stage exit criterion.
-   Stage 3 replaces this page with the dispute workflow. */
+/* Dispute intake and grounded recommendation (US-1, US-2, US-5).
+
+   Order on the page is deliberate: the conflict banner sits ABOVE the
+   recommendation. Per PRD 1.4 the reconciliation is the product, so a reviewer
+   should see that sources disagreed before they see what was decided - not
+   discover it in a footnote afterwards. */
+
+const SCENARIOS = [
+  {
+    label: 'Unauthorised charge (C3)',
+    text: 'Cardholder A. Sharma says she did not authorise a 420 USD charge from Cobalt Travel on her Signature card. She wants her money back.',
+    transaction_id: 'TXN-9001',
+    customer_id: 'CUST-1001',
+  },
+  {
+    label: 'Credit timing (C1)',
+    text: 'A. Sharma ordered a 189.99 USD item from Northwind Electronics and it never arrived. She has a Signature card. When do we have to give her provisional credit?',
+    transaction_id: 'TXN-9002',
+    customer_id: 'CUST-1001',
+  },
+  {
+    label: 'Small refund (C2)',
+    text: 'R. Okafor says a 34.50 USD Aurora Streaming charge was for content he never received. Can I just refund him now, or does he need to contact the merchant first?',
+    transaction_id: 'TXN-9003',
+    customer_id: 'CUST-1002',
+  },
+]
 
 export function CopilotPage() {
-  const [prompt, setPrompt] = useState('Reply with the single word: ready.')
-  const [reply, setReply] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [text, setText] = useState(SCENARIOS[0].text)
+  const [transactionId, setTransactionId] = useState(SCENARIOS[0].transaction_id)
+  const [customerId, setCustomerId] = useState(SCENARIOS[0].customer_id)
+  const [run, setRun] = useState<Run | null>(null)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const run = async () => {
+  async function submit() {
+    if (text.trim().length < 4) return
     setBusy(true)
     setError(null)
-    setReply(null)
+    setRun(null)
     try {
-      const result = await api.smoke(prompt)
-      setReply(result.reply)
-    } catch (e) {
-      setError(String((e as Error).message))
+      setRun(
+        await api.submitDispute({
+          text,
+          transaction_id: transactionId || null,
+          customer_id: customerId || null,
+        }),
+      )
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : String(cause))
     } finally {
       setBusy(false)
     }
@@ -32,47 +66,95 @@ export function CopilotPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight text-text">Copilot</h1>
         <p className="mt-1 text-sm text-text-muted">
-          Card dispute intake, grounded reconciliation and the approval gate land here in Stage 3.
+          Submit a dispute in plain language. The copilot grounds itself in policy, entity state and
+          the transaction record, reconciles conflicting sources, and recommends an action for your
+          approval.
         </p>
       </div>
 
-      <section className="card max-w-2xl space-y-4 p-5">
-        <div>
-          <h2 className="text-sm font-medium text-text">Gateway connectivity probe</h2>
-          <p className="mt-1 text-xs text-text-muted">
-            One round trip through LangChain to the LiteLLM gateway. Watch the header monitor.
-          </p>
+      <section className="card space-y-3 p-4">
+        <div className="flex flex-wrap gap-2">
+          {SCENARIOS.map((scenario) => (
+            <button
+              key={scenario.label}
+              className="btn-ghost text-xs"
+              onClick={() => {
+                setText(scenario.text)
+                setTransactionId(scenario.transaction_id)
+                setCustomerId(scenario.customer_id)
+              }}
+            >
+              {scenario.label}
+            </button>
+          ))}
         </div>
 
         <textarea
-          className="field min-h-[80px] resize-y font-mono text-xs"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          aria-label="Probe prompt"
+          className="field min-h-[92px] resize-y text-sm"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Describe the dispute in the cardholder's own terms"
+          aria-label="Dispute description"
         />
 
-        <button type="button" className="btn-primary" onClick={run} disabled={busy}>
-          <Play size={14} />
-          {busy ? 'Calling…' : 'Send probe'}
-        </button>
-
-        {reply !== null && (
-          <div className="rounded-md bg-success-subtle px-3 py-2">
-            <p className="label-eyebrow text-success">Reply</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-text">{reply}</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="flex gap-2 rounded-md bg-danger-subtle px-3 py-2">
-            <TriangleAlert size={15} className="mt-0.5 shrink-0 text-danger" />
-            <div>
-              <p className="label-eyebrow text-danger">Call failed</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-xs text-text">{error}</p>
-            </div>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="field w-44"
+            value={transactionId}
+            onChange={(e) => setTransactionId(e.target.value)}
+            placeholder="Transaction ID"
+            aria-label="Transaction ID"
+          />
+          <input
+            className="field w-44"
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            placeholder="Customer ID"
+            aria-label="Customer ID"
+          />
+          <button className="btn-primary" onClick={submit} disabled={busy}>
+            <Send size={14} />
+            {busy ? 'Reasoning' : 'Submit dispute'}
+          </button>
+          {busy && (
+            <span className="text-xs text-text-subtle">
+              Triage, retrieval, reconciliation, recommendation.
+            </span>
+          )}
+        </div>
       </section>
+
+      {error && (
+        <div className="card flex gap-2 border-danger/40 bg-danger-subtle p-3">
+          <TriangleAlert size={15} className="mt-0.5 shrink-0 text-danger" />
+          <div className="min-w-0">
+            <p className="label-eyebrow text-danger">Run failed</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-xs text-text">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {run && (
+        <div className="space-y-4">
+          {run.reconciliation && (
+            <ConflictBanner
+              conflicts={run.reconciliation.conflicts}
+              notes={run.reconciliation.notes}
+            />
+          )}
+          {run.recommendation && (
+            <RecommendationCard
+              recommendation={run.recommendation}
+              evidence={run.evidence}
+              elapsedMs={run.elapsed_ms}
+            />
+          )}
+          <EvidencePanel evidence={run.evidence} />
+          <p className="px-1 text-[11px] text-text-subtle">
+            Run {run.run_id} - {run.status.replace(/_/g, ' ')}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

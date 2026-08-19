@@ -14,6 +14,11 @@ clients are all synchronous.
 A source that fails is logged and dropped, not raised: partial grounding still
 produces a cited answer, whereas a hard failure produces none. The guard
 (PRD 5.6) still refuses to run a GROUNDED call if everything came back empty.
+
+After the fan-out there is one bounded second hop: record facts can trigger
+additional policy queries (see triggers.py). Without it, a fact that exists only
+in the system of record - the fraud flag - can never pull its own governing
+clause into context, and conflict C3 is unresolvable however good the reasoner.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from app.db import records
 from app.graph.base import get_store
 from app.logging_setup import get_logger
 from app.rag import store as vector_store
+from app.rag import triggers
 from app.schemas.grounding import Evidence, EvidenceKind, GroundingContext
 
 log = get_logger("rag.retrieve")
@@ -141,6 +147,22 @@ def retrieve(
             except Exception as exc:  # noqa: BLE001 - partial grounding beats none
                 log.warning("retrieval_source_failed", source=name, error=str(exc))
 
+    # Second hop: let the RECORD decide what else to retrieve. See triggers.py -
+    # without this, a fact that exists only in the system of record can never
+    # pull its governing clause into context, which is precisely conflict C3.
+    fired = triggers.fired(records.get_transaction(transaction_id) if transaction_id else None)
+    if fired:
+        seen = {e.ref for e in evidence}
+        for trigger in fired:
+            try:
+                for hit in _policy(trigger["query"], max(3, k // 2)):
+                    if hit.ref not in seen:
+                        seen.add(hit.ref)
+                        evidence.append(hit)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("trigger_retrieval_failed", trigger=trigger["id"], error=str(exc))
+        log.info("retrieval_expanded", triggers=[t["id"] for t in fired], total=len(evidence))
+
     if include_dependencies:
         clause_ids = [e.ref for e in evidence if e.kind == EvidenceKind.POLICY]
         try:
@@ -150,5 +172,6 @@ def retrieve(
 
     context = GroundingContext(evidence=evidence)
     log.info("retrieval_complete", total=len(evidence),
-             policy=len(context.policy), transaction_id=transaction_id)
+             policy=len(context.policy), transaction_id=transaction_id,
+             triggers=[t["id"] for t in fired])
     return context

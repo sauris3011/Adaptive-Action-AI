@@ -112,12 +112,39 @@ PRD §7.2.
 | 0 — PRD | Done |
 | 1 — Walking skeleton | Done: config, TLS, logging, ledger, guard, factory, pre-flight, startup scripts, UI shell with header monitor, theme toggle, settings drawer |
 | 2 — Grounding | Done: domain pack with C1–C3, MIME-keyed ingest, Chroma, Kùzu + Neo4j stores, relational facts, hybrid fan-out, grounding panel with force graph and upload |
-| 3 — LangGraph reasoning pipeline | Not started |
+| 3 — LangGraph reasoning pipeline | Done: triage/retrieve/reconcile/recommend, structured output, SqliteSaver checkpoints, run trace, conflict banner and recommendation UI |
 | 4 — Action workflow + approval gate | Not started |
 | 5 — Eval, KPIs, A2A, docs | Not started |
 
-The Copilot page currently ships a gateway connectivity probe, not the dispute workflow. That lands
-in Stage 3.
+The Copilot page runs the full dispute workflow and stops with a recommendation awaiting approval.
+The approve/reject controls render disabled: the action workflow and the durable interrupt behind
+them land in Stage 4.
+
+### Conflict resolution, measured
+
+All three engineered conflicts resolve correctly against the live gateway (`gemini-3.7-flash` on the
+`reason` role):
+
+| Conflict | Expected | Produced | Governing |
+|---|---|---|---|
+| C1 credit timing | 2 business days | 2 business days | PCT-7.1 over BDP-4.2 and REG-E-3 |
+| C2 merchant contact | not a true conflict | flagged **apparent** only, both routes explained | CNR-11.4 (chargeback) vs GRS-2.3 (goodwill) |
+| C3 fraud routing | route to Fraud Ops | `route_to_fraud_ops` | FSP-1.2 over BDP-2.1, from the record |
+
+Latency 11–16s uncached, well inside the 90s p95 budget.
+
+### Why retrieval is two-phase
+
+C3 exposed a real architectural gap, not a prompt problem. The retrieval query is written by `triage`
+from the cardholder's words — but the fact that decides C3, the fraud-engine flag, exists **only in
+the transaction record**. Nothing the cardholder says can pull FSP-1.2 into context, so the first
+implementation resolved C3 wrongly while reasoning impeccably over evidence that was missing the
+governing clause.
+
+The fix gives the record a vote in what gets retrieved: declarative triggers
+([triggers.py](backend/app/rag/triggers.py)) map record fields to supplementary policy queries. They
+are deterministic — no model decides this — and they live in the domain pack, so a new vertical
+configures its own rather than editing code.
 
 ### Seeding
 
